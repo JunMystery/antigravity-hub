@@ -32,7 +32,7 @@ function persistAccountToken(account, accountsFile) {
       }
     }
     if (found) {
-      fs.writeFileSync(accountsFile, JSON.stringify(raw, null, 2), "utf8");
+      fs.writeFileSync(accountsFile, JSON.stringify(raw, null, 2), { encoding: "utf8", mode: 0o600 });
       console.log(`[AUTH-PERSIST] [SAVE] Đã lưu Access Token mới cho [${account.email}] vào accounts.json`);
     }
   } catch (err) {

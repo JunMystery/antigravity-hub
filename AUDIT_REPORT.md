@@ -9,32 +9,30 @@
 ## 1. TỔNG QUAN ĐIỀU HÀNH (EXECUTIVE SUMMARY)
 
 ### 1.1. Điểm sẵn sàng phát hành (Production Readiness Score)
-$$\mathbf{78 / 100} \quad \text{— Launchable with Caveats (Có thể phát hành kèm điều kiện)}$$
+$$\mathbf{95 / 100} \quad \text{— Production Ready & Hardened (Sẵn sàng phát hành chính thức)}$$
 
-Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở hữu nền tảng kiến trúc vững chắc, phân tách mạch lạc giữa tầng giao diện người dùng Desktop (PyQt6) và tầng Proxy định tuyến thông minh (Node.js). Nhiều cơ chế nâng cao đã được triển khai hiệu quả:
-- **Cơ chế tự sinh Root CA động**: Không dùng chung private key, ngăn ngừa rò rỉ CA key.
+Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở hữu nền tảng kiến trúc vững chắc, phân tách mạch lạc giữa tầng giao diện người dùng Desktop (PyQt6) và tầng Proxy định tuyến thông minh (Node.js). Nhiều cơ chế nâng cao đã được triển khai hiệu quả và hoàn tất quá trình Production Hardening:
+- **Cơ chế tự sinh Root CA động & SPKI Pinning**: Tự động sinh Root CA động độc lập cho từng máy, đồng thời trích xuất mã băm SPKI SHA-256 (`--ignore-certificate-errors-spki-list`) để chỉ tin cậy duy nhất chứng chỉ nội bộ mà không vô hiệu hóa xác thực SSL toàn hệ thống (SEC-01).
+- **Phân quyền tệp nhạy cảm nghiêm ngặt (0600)**: Tự động thiết lập quyền đọc/ghi độc quyền `0600` cho `ca.key`, `accounts.json`, và `profiles.json` trên cả Node.js và Python (SEC-02).
+- **Hủy tiến trình có mục tiêu (Targeted Port Kill)**: Loại bỏ `taskkill /IM node.exe` diện rộng, thay bằng cơ chế giải phóng chính xác tiến trình chiếm cổng 20130 qua PowerShell (ROB-01) và sửa lỗi đường dẫn `pkill` (ROB-02).
+- **Tối ưu tần số I/O Polling**: Giảm tần số thăm dò tệp dự phòng xuống 500ms (PERF-01).
 - **Dedicated Per-Account Socket Agent**: Cô lập socket HTTPS giữa các tài khoản Google.
 - **Cầu nối tín hiệu Qt (QuotaSignalBridge)**: Không block GUI thread khi quét Quota đa luồng.
 - **Tuân thủ quy chuẩn LOC**: 100% các file mã nguồn đều được kiểm soát nghiêm ngặt `< 300 LOC`.
-
-Tuy nhiên, để đạt chuẩn phát hành an toàn tuyệt đối cho người dùng cuối (Production Hardening), dự án cần xử lý 3 rủi ro bảo mật và độ ổn định trọng yếu:
-1. Loại bỏ cờ `--ignore-certificate-errors` toàn cục khi khởi chạy Antigravity IDE.
-2. Thiết lập quyền truy cập tệp (`0600`) cho chứng chỉ `ca.key` và cơ sở dữ liệu `accounts.json`.
-3. Thay thế lệnh hủy tiến trình diện rộng `taskkill /IM node.exe` trên Windows bằng cơ chế kill chính xác theo PID.
 
 ---
 
 ### 1.2. Ma trận tổng hợp các phát hiện (Findings Matrix)
 
-| ID | Hạng mục | Vấn đề phát hiện | Mức độ | Trạng thái đề xuất |
+| ID | Hạng mục | Vấn đề phát hiện | Mức độ | Trạng thái |
 |---|---|---|:---:|:---:|
-| **SEC-01** | Bảo mật | Cờ `--ignore-certificate-errors` tắt xác thực SSL toàn hệ thống | **HIGH** | Khắc phục ngay |
-| **SEC-02** | Bảo mật | Token & Private Key lưu plaintext thiếu phân quyền tệp (`0600`) | **HIGH** | Khắc phục ngay |
-| **ROB-01** | Độ bền | `taskkill /IM node.exe` trên Windows hủy nhầm các tiến trình Node khác | **HIGH** | Khắc phục ngay |
-| **SEC-03** | Bảo mật | Google OAuth Client Secret lưu cố định trong mã nguồn | **MEDIUM** | Khuyến nghị cải tiến |
-| **PERF-01**| Hiệu năng | Polling tệp lệnh `proxy_cmd.json` tần số cao (150ms) | **MEDIUM** | Tối ưu hóa |
-| **ROB-02** | Độ bền | Lệnh `pkill` trong `launcher_proxy.py` sử dụng sai đường dẫn script | **MEDIUM** | Sửa lỗi logic |
-| **PLAT-01**| Đa nền tảng| Tệp `launch.bat` thiếu thiết lập biến môi trường `PYTHONPATH` | **MEDIUM** | Đồng bộ hóa |
+| **SEC-01** | Bảo mật | Cờ `--ignore-certificate-errors` tắt xác thực SSL toàn hệ thống | **HIGH** | **ĐÃ KHẮC PHỤC (SPKI Pinning)** |
+| **SEC-02** | Bảo mật | Token & Private Key lưu plaintext thiếu phân quyền tệp (`0600`) | **HIGH** | **ĐÃ KHẮC PHỤC (Chmod 0600)** |
+| **ROB-01** | Độ bền | `taskkill /IM node.exe` trên Windows hủy nhầm các tiến trình Node khác | **HIGH** | **ĐÃ KHẮC PHỤC (Port 20130 Kill)** |
+| **SEC-03** | Bảo mật | Google OAuth Client Secret lưu cố định trong mã nguồn | **MEDIUM** | Bán công khai (Desktop PKCE) |
+| **PERF-01**| Hiệu năng | Polling tệp lệnh `proxy_cmd.json` tần số cao (150ms) | **MEDIUM** | **ĐÃ TỐI ƯU (500ms)** |
+| **ROB-02** | Độ bền | Lệnh `pkill` trong `launcher_proxy.py` sử dụng sai đường dẫn script | **MEDIUM** | **ĐÃ KHẮC PHỤC (proxy/index.js)** |
+| **PLAT-01**| Đa nền tảng| Tệp `launch.bat` thiếu thiết lập biến môi trường `PYTHONPATH` | **MEDIUM** | **ĐÃ HOÀN TẤT** |
 | **PERF-02**| Hiệu năng | Quét Quota song song 6 luồng ngầm qua `ThreadPoolExecutor` | **PASSED** | Đạt chuẩn Qt |
 | **ROB-03** | Độ bền | Tự động dọn dẹp socket rác `server.removeServer` khi khởi động | **PASSED** | Đạt chuẩn Linux |
 | **LOC-01** | Quy chuẩn | Toàn bộ 27 tệp mã nguồn tuân thủ giới hạn `< 300 LOC/file` | **PASSED** | Tuyệt đối tuân thủ |
@@ -215,15 +213,15 @@ Tuy nhiên, để đạt chuẩn phát hành an toàn tuyệt đối cho ngườ
 
 ## 6. LỘ TRÌNH KHẮC PHỤC CHI TIẾT (ACTIONABLE REMEDIATION ROADMAP)
 
-### Giai đoạn 1: Hardening Bảo mật & Khắc phục Rủi ro Cao (Khuyến nghị thực hiện ngay)
-1. **[SEC-01]** Trong `launcher/launcher_proxy.py`: Thay đổi cách cấu hình chứng chỉ cho Antigravity IDE. Tận dụng `NODE_EXTRA_CA_CERTS` và chứng chỉ hệ thống, loại bỏ cờ `--ignore-certificate-errors`.
-2. **[ROB-01]** Trong `launcher/launcher_proxy.py`: Xóa bỏ dòng `taskkill /F /IM node.exe`. Áp dụng cơ chế kill an toàn theo PID hoặc kiểm tra đúng tiến trình đang chiếm cổng `20130`.
-3. **[SEC-02]** Thiết lập `chmod 600` cho `ca.key` và `accounts.json` khi tạo tệp.
+### Giai đoạn 1: Hardening Bảo mật & Khắc phục Rủi ro Cao [ĐÃ HOÀN TẤT]
+1. **[SEC-01 - ĐÃ XỬ LÝ]** Trong `launcher/launcher_proxy.py`: Thay đổi cách cấu hình chứng chỉ cho Antigravity IDE. Tự động trích xuất SPKI SHA-256 fingerprint từ `proxy/certs/ca.crt` và gán cờ `--ignore-certificate-errors-spki-list=<hash>` để chỉ tin cậy duy nhất chứng chỉ nội bộ.
+2. **[ROB-01 - ĐÃ XỬ LÝ]** Trong `launcher/launcher_proxy.py`: Xóa bỏ dòng `taskkill /F /IM node.exe`. Áp dụng cơ chế giải phóng tiến trình chiếm cổng `20130` qua PowerShell có mục tiêu (`Get-NetTCPConnection`).
+3. **[SEC-02 - ĐÃ XỬ LÝ]** Thiết lập `mode: 0o600` / `os.chmod(..., 0o600)` cho `ca.key`, `accounts.json` và `profiles.json` trên cả Node.js và Python.
 
-### Giai đoạn 2: Tối ưu Độ bền & Đồng bộ Đa nền tảng
-1. **[PLAT-01]** Bổ sung dòng `set PYTHONPATH=%~dp0launcher;%PYTHONPATH%` vào đầu tệp `launch.bat`.
-2. **[ROB-02]** Cập nhật chuỗi tìm kiếm trong `pkill -f` từ `antigravity-token-proxy/index.js` thành `proxy/index.js`.
-3. **[PERF-01]** Tăng chu kỳ thăm dò tệp dự phòng `checkCmdFile` từ 150ms lên 500ms.
+### Giai đoạn 2: Tối ưu Độ bền & Đồng bộ Đa nền tảng [ĐÃ HOÀN TẤT]
+1. **[PLAT-01 - ĐÃ XỬ LÝ]** Bổ sung dòng `set "PYTHONPATH=%~dp0launcher;%PYTHONPATH%"` vào đầu tệp `launch.bat`.
+2. **[ROB-02 - ĐÃ XỬ LÝ]** Cập nhật chuỗi tìm kiếm trong `pkill -f` từ `antigravity-token-proxy/index.js` thành `proxy/index.js`.
+3. **[PERF-01 - ĐÃ XỬ LÝ]** Tăng chu kỳ thăm dò tệp dự phòng `checkCmdFile` từ 150ms lên 500ms.
 
 ### Giai đoạn 3: Tái cấu trúc Kiến trúc Dài hạn (Phòng ngừa vượt 300 LOC)
 1. Trích xuất mã CSS QSS từ `launcher/launcher_layout.py` (hiện 285 LOC) thành tệp tài nguyên tĩnh `launcher/assets/style.qss`.

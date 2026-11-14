@@ -178,7 +178,7 @@ function checkCmdFile() {
     } catch (_) {}
   }
 }
-setInterval(checkCmdFile, 150);
+setInterval(checkCmdFile, 500);
 
 // Proxy HTTP Server (handles CONNECT tunnels, Control API & OAuth callback)
 const proxyServer = http.createServer(async (req, res) => {

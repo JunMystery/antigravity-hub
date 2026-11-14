@@ -156,6 +156,28 @@ PROXY_PORT = 20130
 PID_FILE = os.path.join(CONFIG_DIR, "proxy.pid")
 LAUNCHED_APPS_FILE = os.path.join(CONFIG_DIR, "launched_apps.json")
 
+def get_certificate_spki_fingerprint(cert_path: str) -> str:
+    """Trích xuất mã băm SPKI SHA-256 Base64 của chứng chỉ cho Chromium pinning."""
+    if not cert_path or not os.path.exists(cert_path):
+        return ""
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
+        import hashlib, base64
+        with open(cert_path, "rb") as f:
+            c = x509.load_pem_x509_certificate(f.read())
+        der = c.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+        return base64.b64encode(hashlib.sha256(der).digest()).decode("ascii")
+    except Exception:
+        pass
+    try:
+        import subprocess, hashlib, base64
+        r1 = subprocess.run(["openssl", "x509", "-in", cert_path, "-pubkey", "-noout"], capture_output=True, text=True, check=True)
+        r2 = subprocess.run(["openssl", "pkey", "-pubin", "-outform", "der"], input=r1.stdout.encode(), capture_output=True, check=True)
+        return base64.b64encode(hashlib.sha256(r2.stdout).digest()).decode("ascii")
+    except Exception:
+        return ""
+
 CACHE_TTL = 180           # 3 phút cache cho mỗi tài khoản
 MANUAL_COOLDOWN = 30      # 30 giây cooldown sau khi bấm nút làm mới thủ công
 
@@ -218,10 +240,18 @@ def load_data() -> dict:
             "profiles": []
         }
 
-def save_data(data: dict) -> None:
+def _secure_write(path: str, content: dict) -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(PROFILES_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(content, f, indent=2, ensure_ascii=False)
+    if sys.platform != "win32":
+        try:
+            os.chmod(path, 0o600)
+        except Exception:
+            pass
+
+def save_data(data: dict) -> None:
+    _secure_write(PROFILES_FILE, data)
 
 def load_accounts() -> list:
     if not os.path.exists(ACCOUNTS_FILE):
@@ -233,9 +263,7 @@ def load_accounts() -> list:
         return []
 
 def save_accounts(accounts: list) -> None:
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(ACCOUNTS_FILE, "w", encoding="utf-8") as f:
-        json.dump({"accounts": accounts}, f, indent=2, ensure_ascii=False)
+    _secure_write(ACCOUNTS_FILE, {"accounts": accounts})
 
 def delete_account_completely(profile: dict) -> dict:
     """Xóa triệt để profile, token và thư mục dữ liệu trên đĩa."""

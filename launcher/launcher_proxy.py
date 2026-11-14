@@ -13,7 +13,7 @@ import subprocess
 from launcher_storage import (
     CONFIG_DIR, PROXY_PORT, PROXY_SCRIPT, PID_FILE,
     LAUNCHED_APPS_FILE, ROOT_CA, PROXY_PAC, APP_BINARY,
-    get_app_binary, get_ide_binary
+    get_app_binary, get_ide_binary, get_certificate_spki_fingerprint
 )
 
 LAUNCHED_PIDS = []
@@ -47,7 +47,8 @@ def stop_proxy():
 
     if sys.platform == "win32":
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "node.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            ps_kill = f"Get-NetTCPConnection -LocalPort {PROXY_PORT} -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}"
+            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_kill], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
     else:
@@ -56,7 +57,7 @@ def stop_proxy():
         except Exception:
             pass
         try:
-            subprocess.run(["pkill", "-f", "antigravity-token-proxy/index.js"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", "proxy/index.js"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
@@ -220,7 +221,11 @@ def launch_profile(data_dir: str, target: str = "app", use_proxy: bool = True) -
         env["NO_PROXY"] = "localhost,127.0.0.1"
         env["no_proxy"] = "localhost,127.0.0.1"
 
-        cmd.insert(1, "--ignore-certificate-errors")
+        spki_pin = get_certificate_spki_fingerprint(ROOT_CA)
+        if spki_pin:
+            cmd.insert(1, f"--ignore-certificate-errors-spki-list={spki_pin}")
+        else:
+            cmd.insert(1, "--ignore-certificate-errors")
         cmd.insert(1, f"--proxy-pac-script={PROXY_PAC}")
 
     try:

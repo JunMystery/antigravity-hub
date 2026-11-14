@@ -10,6 +10,9 @@ function ensureRootCertificate(certsDir) {
   const caKeyPath = path.join(certsDir, "ca.key");
 
   if (fs.existsSync(caCrtPath) && fs.existsSync(caKeyPath)) {
+    try {
+      if (process.platform !== "win32") fs.chmodSync(caKeyPath, 0o600);
+    } catch (_) {}
     return;
   }
 
@@ -38,7 +41,7 @@ function ensureRootCertificate(certsDir) {
 
   cert.sign(keys.privateKey, forge.md.sha256.create());
 
-  fs.writeFileSync(caKeyPath, forge.pki.privateKeyToPem(keys.privateKey), "utf8");
+  fs.writeFileSync(caKeyPath, forge.pki.privateKeyToPem(keys.privateKey), { encoding: "utf8", mode: 0o600 });
   fs.writeFileSync(caCrtPath, forge.pki.certificateToPem(cert), "utf8");
   console.log(`[MITM-INIT] [OK] Da sinh thanh cong Root CA tai: ${certsDir}`);
 }
