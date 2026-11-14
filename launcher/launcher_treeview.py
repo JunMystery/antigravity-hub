@@ -182,6 +182,41 @@ def get_selected_profile(win):
             return p
     return None
 
+def mark_all_rows_refreshing(win):
+    """Đánh dấu tất cả các hàng trong bảng đang trong trạng thái quét Quota."""
+    if not hasattr(win, "treeview") or not win.treeview:
+        return
+    table = win.treeview
+    pending_color = QColor("#89b4fa")
+    for row in range(table.rowCount()):
+        item_q5 = table.item(row, 3)
+        if item_q5:
+            item_q5.setText("Đang quét...")
+            item_q5.setForeground(pending_color)
+        item_qw = table.item(row, 4)
+        if item_qw:
+            item_qw.setText("Đang quét...")
+            item_qw.setForeground(pending_color)
+
+def mark_single_row_refreshing(win, profile_id):
+    """Đánh dấu một hàng cụ thể đang trong trạng thái quét Quota."""
+    if not hasattr(win, "treeview") or not win.treeview:
+        return
+    table = win.treeview
+    pending_color = QColor("#89b4fa")
+    for row in range(table.rowCount()):
+        item = table.item(row, 0)
+        if item and item.data(Qt.ItemDataRole.UserRole) == profile_id:
+            item_q5 = table.item(row, 3)
+            if item_q5:
+                item_q5.setText("Đang quét...")
+                item_q5.setForeground(pending_color)
+            item_qw = table.item(row, 4)
+            if item_qw:
+                item_qw.setText("Đang quét...")
+                item_qw.setForeground(pending_color)
+            break
+
 def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid):
     """Cập nhật hiển thị Quota cho một hàng theo profile_id."""
     table = win.treeview
