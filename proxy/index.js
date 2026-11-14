@@ -33,9 +33,12 @@ const STATUS_FILE = path.join(CONFIG_DIR, "live_status.json");
 const CMD_FILE = path.join(CONFIG_DIR, "proxy_cmd.json");
 const ROTATOR_STATE_FILE = path.join(CONFIG_DIR, "rotator_state.json");
 
+const DEFAULT_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+const DEFAULT_CLIENT_SECRET = "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";
+
 const CONFIG = {
-  GOOGLE_CLIENT_ID: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
-  GOOGLE_CLIENT_SECRET: "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",
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || DEFAULT_CLIENT_ID,
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || DEFAULT_CLIENT_SECRET,
   ACCOUNTS_FILE,
   PROFILES_FILE,
   ROTATOR_STATE_FILE
