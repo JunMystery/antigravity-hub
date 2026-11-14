@@ -1,0 +1,52 @@
+# Dữ liệu tài khoản & Token Google OAuth
+accounts.json
+profiles.json
+rotator_state.json
+live_status.json
+proxy_cmd.json
+launched_apps.json
+*.pid
+
+# Thư mục cấu hình và dữ liệu profiles
+Antigravity-Profiles/
+.config/
+
+# Chứng chỉ SSL và Khóa bảo mật cá nhân
+proxy/certs/*.key
+proxy/certs/*.crt
+proxy/certs/*.pem
+certs/*.key
+certs/*.crt
+certs/*.pem
+!proxy/certs/.gitkeep
+!certs/.gitkeep
+
+# Môi trường và cấu hình nhạy cảm
+.env
+.env.*
+*.log
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IDE & Hệ thống
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.agent-context/

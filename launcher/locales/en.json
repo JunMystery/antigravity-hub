@@ -1,0 +1,23 @@
+{
+  "app.title": "Antigravity Profile Launcher",
+  "app.subtitle": "Profile & Quota Manager",
+  "btn.add": "_Add",
+  "btn.delete": "_Delete",
+  "btn.launch": "Launch",
+  "col.order": "No.",
+  "col.active": "Active",
+  "col.email": "Email",
+  "col.5h": "5h",
+  "col.weekly": "Weekly",
+  "col.quota": "Quota",
+  "info.summary": "Accounts: <b>{enabled}/{total}</b> Active | <b>{reqs}</b> req/acc",
+  "info.empty": "<i>No accounts. Click <b>+ Add</b>.</i>",
+  "opt.mode": "<b>Mode:</b> Round Robin (Port 20130)",
+  "opt.req_per_acc": "Req / acc:",
+  "tooltip.auto_on": "Auto-refresh (5 min): ON - Click to TURN OFF",
+  "tooltip.auto_off": "Auto-refresh (5 min): OFF - Click to TURN ON",
+  "tooltip.refresh_all": "Refresh all accounts Quota (Cooldown 30s)",
+  "dialog.delete_title": "Delete account '{label}'?",
+  "dialog.delete_warning": "Warning: This permanently deletes profile, token credentials, and disk data.\n\nAre you sure?",
+  "dialog.deleted_msg": "<b><span color='#e74c3c'>[DELETED]</span></b> Account <b>{label}</b> has been completely removed."
+}

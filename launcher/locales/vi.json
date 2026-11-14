@@ -1,0 +1,23 @@
+{
+  "app.title": "Antigravity Profile Launcher",
+  "app.subtitle": "Quản lý Profile & Quota",
+  "btn.add": "_Thêm",
+  "btn.delete": "_Xóa",
+  "btn.launch": "Khởi động",
+  "col.order": "TT",
+  "col.active": "Active",
+  "col.email": "Email",
+  "col.5h": "5h",
+  "col.weekly": "Tuần",
+  "col.quota": "Quota",
+  "info.summary": "Tài khoản: <b>{enabled}/{total}</b> Active | <b>{reqs}</b> req/acc",
+  "info.empty": "<i>Chưa có tài khoản. Nhấn <b>+ Thêm</b>.</i>",
+  "opt.mode": "<b>Chế độ:</b> Round Robin (Port 20130)",
+  "opt.req_per_acc": "Req / acc:",
+  "tooltip.auto_on": "Tự động làm mới (5 phút): Đang BẬT - Nhấp để TẮT",
+  "tooltip.auto_off": "Tự động làm mới (5 phút): Đang TẮT - Nhấp để BẬT",
+  "tooltip.refresh_all": "Làm mới Quota toàn bộ tài khoản (Cooldown 30s)",
+  "dialog.delete_title": "Xác nhận xóa tài khoản '{label}'?",
+  "dialog.delete_warning": "Cảnh báo: Hành động này sẽ xóa hoàn toàn profile, thu hồi token và xóa dữ liệu trên đĩa.\n\nBạn có chắc chắn muốn xóa không?",
+  "dialog.deleted_msg": "<b><span color='#e74c3c'>[ĐÃ XÓA]</span></b> Đã xóa hoàn toàn tài khoản <b>{label}</b> và dữ liệu."
+}
