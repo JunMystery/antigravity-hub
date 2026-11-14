@@ -65,6 +65,10 @@ async function refreshGoogleAccessToken(account, config) {
     if (!res.ok) {
       const errText = await res.text();
       console.error(`[AUTH-ERR] Refresh token thất bại cho ${account.email}: HTTP ${res.status} - ${errText}`);
+      if (errText.includes("invalid_grant")) {
+        account.unhealthyUntil = Date.now() + 5 * 60 * 1000;
+        console.warn(`[AUTH-ERR] Tai khoan ${account.email} bi invalid_grant. Tam danh dau unhealthy trong 5 phut.`);
+      }
       return null;
     }
 
@@ -72,6 +76,7 @@ async function refreshGoogleAccessToken(account, config) {
     account.accessToken = data.access_token;
     account.refreshToken = plainRefreshToken;
     account.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+    account.unhealthyUntil = 0;
     console.log(`[AUTH-REFRESH] [OK] Đã tự động cấp mới Token từ Google cho: ${account.email}`);
 
     persistAccountToken(account, config.ACCOUNTS_FILE);

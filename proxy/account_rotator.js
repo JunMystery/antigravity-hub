@@ -1,11 +1,9 @@
 const fs = require("node:fs");
 const { checkProactiveTokenRefresh } = require("./token_manager");
 const { agentPool } = require("./agent_pool");
+const { sessionAffinity } = require("./session_affinity");
 
-/**
- * Quan ly xoay vong tai khoan Round Robin theo thu tu uu tien (Priority / Order)
- * Co co che luu va khoi phuc trang thai ben vung qua file rotator_state.json.
- */
+// Quan ly xoay vong tai khoan Round Robin co persistent state va session affinity
 class AccountRotator {
   constructor(config) {
     this.config = config;
@@ -20,25 +18,61 @@ class AccountRotator {
 
   getCurrentAccount() {
     const total = this.accounts.length || 1;
+    if (this.accounts.length === 0) return null;
+    const now = Date.now();
+    for (let i = 0; i < this.accounts.length; i++) {
+      const acc = this.accounts[(this.accountIndex + i) % total];
+      if (!acc.unhealthyUntil || acc.unhealthyUntil < now) {
+        return acc;
+      }
+    }
     return this.accounts[this.accountIndex % total] || null;
   }
 
-  nextAccount() {
+  nextAccount(sessionId = null, isFailover = false) {
     const total = this.accounts.length || 1;
     this.accountIndex = (this.accountIndex + 1) % total;
     this.currentAccRequestsServed = 0;
+    const cur = this.getCurrentAccount();
+    if (isFailover && sessionId && cur) {
+      sessionAffinity.setAffinity(sessionId, cur);
+    }
     this.saveRotatorState();
-    return this.getCurrentAccount();
+    return cur;
   }
 
   /**
-   * Phan bo tai khoan nguyen tu cho tung request den, tranh race condition
+   * Phan bo tai khoan nguyen tu voi Session Affinity & Concurrency Shield
    */
-  allocateAccountForRequest() {
+  allocateAccountForRequest(sessionId = null, isSubagent = false) {
     if (this.accounts.length === 0) {
       this.loadState();
     }
+
+    // 1. Uu tien Sticky Session theo Conversation
+    if (sessionId) {
+      const affAcc = sessionAffinity.getAffinityAccount(sessionId, this.accounts);
+      if (affAcc) {
+        this.requestCount++;
+        return { account: affAcc, servedCount: this.currentAccRequestsServed, requestNumber: this.requestCount, isSticky: true };
+      }
+    }
+
+    // 2. Concurrency Shield: Giu nguyen account cho Subagents song song
+    if (isSubagent || sessionAffinity.inFlightCount > 0) {
+      const burstAcc = sessionAffinity.getBurstAccount(this.accounts);
+      if (burstAcc) {
+        this.requestCount++;
+        if (sessionId) sessionAffinity.setAffinity(sessionId, burstAcc);
+        return { account: burstAcc, servedCount: this.currentAccRequestsServed, requestNumber: this.requestCount, isSticky: true };
+      }
+    }
+
+    // 3. Xoay vong Round Robin thong thuong
     const current = this.getCurrentAccount();
+    if (sessionId && current) {
+      sessionAffinity.setAffinity(sessionId, current);
+    }
     this.requestCount++;
     this.currentAccRequestsServed++;
     const served = this.currentAccRequestsServed;
@@ -56,7 +90,8 @@ class AccountRotator {
     return {
       account: current,
       servedCount: served,
-      requestNumber: this.requestCount
+      requestNumber: this.requestCount,
+      isSticky: false
     };
   }
 

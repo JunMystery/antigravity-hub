@@ -2,6 +2,7 @@ const https = require("node:https");
 const { ensureValidToken, refreshGoogleAccessToken } = require("./token_manager");
 const { getAgentForAccount } = require("./agent_pool");
 const { decryptToken } = require("./crypto_helper");
+const { sessionAffinity } = require("./session_affinity");
 
 /**
  * Kiem tra xem endpoint co phai la AI Chat / Code Generation / Subagent khong
@@ -69,15 +70,7 @@ function readErrorBody(res) {
   });
 }
 
-/**
- * Gui Chat Request len Google Cloud Code voi co che:
- * 1. Dedicated Per-Account HTTPS Agent: Co lap 100% socket giua cac tai khoan.
- * 2. Dynamic Payload & Project ID Rewrite theo tung tai khoan.
- * 3. Cap moi Token chu dong truoc khi gui neu token het han / sap het han.
- * 4. Tu dong ep cap lai token ngay khi bi HTTP 401 Unauthorized tu Google.
- * 5. Tu dong chuyen tai khoan ke tiep (Auto-Failover) khi bi 429, 403 hoac 404.
- * 6. Stream-aware Inactivity Timeout & Force End: Chong treo/nuot request tuyet doi.
- */
+// Gui Chat Request voi Dedicated Agent, Dynamic Rewrite, Auto-Failover va Auth Shield
 async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt = 1) {
   const totalAccs = context.accounts.length || 1;
   const accName = account ? account.email : "UNKNOWN";
@@ -132,6 +125,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
   };
 
   let gResFinished = false;
+  sessionAffinity.startRequest(account);
 
   const gReq = https.request(outgoingOptions, async (gRes) => {
     // XU LY 401 UNAUTHORIZED: Ep cap moi token ngay lap tuc
@@ -140,13 +134,14 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
       console.warn(`[AUTO-FAILOVER-401] [WARN] Tai khoan ${accName} bi HTTP 401: ${errText.slice(0, 150)}. Dang cap moi Token...`);
 
       refreshGoogleAccessToken(account, context.config).then((refreshed) => {
+        sessionAffinity.endRequest();
         if (clientRes.destroyed || clientRes.closed) return;
         if (refreshed) {
           console.log(`[AUTO-FAILOVER-401] [OK] Cap moi token thanh cong cho ${accName}. Thu lai request...`);
           executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
         } else {
           console.warn(`[AUTO-FAILOVER-401] [FAIL] Refresh token that bai cho ${accName}. Chuyen sang tai khoan ke tiep...`);
-          context.nextAccount();
+          context.nextAccount(context.sessionId, true);
           const nextAcc = context.getCurrentAccount();
           executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
         }
@@ -156,10 +151,11 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
 
     // XU LY 429 (QUOTA) HOAC 403 (FORBIDDEN) HOAC 404 (PROJECT NOT FOUND): Auto-Failover
     if ((gRes.statusCode === 429 || gRes.statusCode === 403 || gRes.statusCode === 404) && attempt <= totalAccs) {
+      sessionAffinity.endRequest();
       const errText = await readErrorBody(gRes);
       console.warn(`[AUTO-FAILOVER] [WARN] Tai khoan ${accName} bi HTTP ${gRes.statusCode}: ${errText.slice(0, 200)}! Dang doi tai khoan tiep theo...`);
 
-      context.nextAccount();
+      context.nextAccount(context.sessionId, true);
       const nextAcc = context.getCurrentAccount();
 
       context.writeLiveStatus({
@@ -183,6 +179,22 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
       return;
     }
 
+    // AUTH SHIELD: Tuyet doi chan 401 khong cho lot ve IDE lam logout session
+    if (gRes.statusCode === 401) {
+      sessionAffinity.endRequest();
+      console.error(`[AUTH-SHIELD] [PROTECT] Google tra ve 401 tren [${accName}]. Masking sang 503 de bao ve session IDE!`);
+      if (!clientRes.headersSent) {
+        clientRes.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
+        clientRes.end(JSON.stringify({
+          error: {
+            code: 503,
+            message: "Antigravity Proxy: Tat ca token dang duoc lam moi. Session an toan. Vui long thu lai."
+          }
+        }));
+      }
+      return;
+    }
+
     // Phan hoi thanh cong hoac loi khong nam trong dien failover
     const isPaused = Boolean(context.rotationPaused);
     context.writeLiveStatus({
@@ -202,16 +214,19 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
 
     // Bat su kien ket thuc stream that su de giai phong co gResFinished
     gRes.on("end", () => {
+      if (!gResFinished) sessionAffinity.endRequest();
       gResFinished = true;
     });
 
     gRes.on("close", () => {
+      if (!gResFinished) sessionAffinity.endRequest();
       gResFinished = true;
     });
 
     // Bat loi stream truc tiep tu phia Google upstream
     gRes.on("error", (err) => {
       console.error(`[STREAM-ERR] Loi stream tu Google (${accName}):`, err.message);
+      if (!gResFinished) sessionAffinity.endRequest();
       gResFinished = true;
       if (!clientRes.writableEnded) {
         clientRes.end();
@@ -224,6 +239,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
 
   // Client Abort / Socket Cleanup: giai phong socket upstream neu client IDE dong ket noi
   clientRes.on("close", () => {
+    if (!gResFinished) sessionAffinity.endRequest();
     if (!gResFinished && !gReq.destroyed) {
       console.log(`[CLIENT-ABORT] Client IDE da dong ket noi som. Huy socket upstream cho [${accName}]`);
       gReq.destroy();
@@ -232,15 +248,18 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
 
   gReq.on("timeout", () => {
     console.warn(`[UPSTREAM-TIMEOUT] [WARN] Het thoi gian cho ket noi Google (${host}) sau 35s cho [${accName}]`);
+    if (!gResFinished) sessionAffinity.endRequest();
+    gResFinished = true;
     gReq.destroy(new Error("Upstream connection timeout"));
   });
 
   gReq.on("error", (e) => {
     console.error(`[UPSTREAM-ERR] Loi ket noi Google (${host}) tren [${accName}]:`, e.message);
+    if (!gResFinished) sessionAffinity.endRequest();
     gResFinished = true;
 
     if (attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
-      context.nextAccount();
+      context.nextAccount(context.sessionId, true);
       const nextAcc = context.getCurrentAccount();
       console.warn(`[AUTO-FAILOVER-NET] [WARN] Loi socket (${e.message}). Doi sang ${nextAcc?.email}...`);
       executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);

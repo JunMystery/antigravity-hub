@@ -17,6 +17,7 @@ const { isAiChatEndpoint, executeGoogleChatRequest } = require("./chat_handler")
 const { handleOAuthRoute } = require("./oauth_handler");
 const { AccountRotator } = require("./account_rotator");
 const { agentPool } = require("./agent_pool");
+const { sessionAffinity } = require("./session_affinity");
 
 const PROXY_PORT = 20130;
 const userHome = os.homedir();
@@ -61,12 +62,13 @@ setInterval(() => rotator.loadState(), 5000);
 const curInitAcc = rotator.getCurrentAccount();
 console.log(`[ROUND-ROBIN] Da nap ${rotator.accounts.length} tai khoan active (Khoi tao tai: [${curInitAcc?.email || "Chua co"}], nguong: ${rotator.requestsPerAccount} req/tai khoan).`);
 
-function getRequestContext() {
+function getRequestContext(sessionId = null) {
   return {
     config: CONFIG,
+    sessionId,
     get accounts() { return rotator.accounts; },
     getCurrentAccount: () => rotator.getCurrentAccount(),
-    nextAccount: () => rotator.nextAccount(),
+    nextAccount: (sId = null, isFail = false) => rotator.nextAccount(sId || sessionId, isFail),
     get accountIndex() { return rotator.accountIndex; },
     get currentAccRequestsServed() { return rotator.currentAccRequestsServed; },
     get requestsPerAccount() { return rotator.requestsPerAccount; },
@@ -107,6 +109,13 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       headers: fwdHeaders,
       timeout: 30000
     }, (gRes) => {
+      // AUTH SHIELD: Mask 401 tren non-chat endpoint de bao ve session IDE
+      if (gRes.statusCode === 401) {
+        console.warn(`[AUTH-SHIELD] [NON-CHAT] Masking 401 sang 503 tren: ${reqUrl}`);
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { code: 503, message: "Token refreshing" } }));
+        return;
+      }
       res.writeHead(gRes.statusCode, gRes.headers);
       gRes.pipe(res);
       gRes.on("error", () => {
@@ -141,16 +150,19 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
   req.on("data", (chunk) => chunks.push(chunk));
   req.on("end", async () => {
     const bodyBuffer = Buffer.concat(chunks);
-    const allocation = rotator.allocateAccountForRequest();
-    const currentAcc = allocation.account;
-    const accName = currentAcc ? currentAcc.email : "UNKNOWN";
-    const servedCount = allocation.servedCount;
-    const reqNum = allocation.requestNumber;
     const rawHost = req.headers["host"] || "daily-cloudcode-pa.googleapis.com";
     const isSubagent = rawHost.includes("generativelanguage") || rawHost.includes("companion") || reqUrl.includes("/models/");
     const tag = isSubagent ? "[SUBAGENT]" : "[CHAT]";
 
-    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${req.method} ${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
+    const sessionId = sessionAffinity.extractSessionId(req.headers, bodyBuffer);
+    const allocation = rotator.allocateAccountForRequest(sessionId, isSubagent);
+    const currentAcc = allocation.account;
+    const accName = currentAcc ? currentAcc.email : "UNKNOWN";
+    const servedCount = allocation.servedCount;
+    const reqNum = allocation.requestNumber;
+    const stickyFlag = allocation.isSticky ? "[STICKY] " : "";
+
+    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${req.method} ${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
 
     writeLiveStatus({
       active: true,
@@ -165,7 +177,7 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       status: "sending"
     });
 
-    executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext());
+    executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(sessionId));
   });
 });
 

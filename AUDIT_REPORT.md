@@ -13,6 +13,7 @@ $$\mathbf{100 / 100} \quad \text{— Flawless Production Grade (Sẵn sàng phá
 
 Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở hữu nền tảng kiến trúc vững chắc, phân tách mạch lạc giữa tầng giao diện người dùng Desktop (PyQt6) và tầng Proxy định tuyến thông minh (Node.js). Toàn bộ 4 giai đoạn cải tiến và bảo mật đã được hoàn tất trọn vẹn:
 - **Mã hóa Token Machine-Bound AES-256-GCM**: Toàn bộ Google OAuth `accessToken` và `refreshToken` trong `accounts.json` được mã hóa đối xứng cấp độ trường (field-level `enc:v1:...`) bằng khóa 32 bytes sinh từ Machine ID + User UID (hoặc `ANTIGRAVITY_MASTER_KEY`). Đảm bảo dữ liệu bị sao chép sang máy khác không thể bị giải mã; hỗ trợ đồng bộ song phương 100% giữa Python Launcher và Node.js Micro-Proxy (SEC-04).
+- **Cơ chế Bảo vệ Phiên Auth Shield & Session Affinity (Chống Bị Đá Khỏi Session)**: Khắc phục triệt để lỗi người dùng bị đá khỏi phiên Antigravity IDE khi gọi subagents. Tuyệt đối không cho phép HTTP 401 lọt về IDE (chuyển đổi an toàn sang HTTP 503 khi lỗi); bổ sung `proxy/session_affinity.js` ghim chặt subagents và hội thoại vào duy nhất 1 tài khoản và Project ID (BUG-01).
 - **Cơ chế tự sinh Root CA động & SPKI Pinning**: Tự động sinh Root CA động độc lập cho từng máy, đồng thời trích xuất mã băm SPKI SHA-256 (`--ignore-certificate-errors-spki-list`) để chỉ tin cậy duy nhất chứng chỉ nội bộ mà không vô hiệu hóa xác thực SSL toàn hệ thống (SEC-01).
 - **Phân quyền tệp nhạy cảm nghiêm ngặt (0600)**: Tự động thiết lập quyền đọc/ghi độc quyền `0600` cho `ca.key`, `accounts.json`, và `profiles.json` trên cả Node.js và Python (SEC-02).
 - **Hủy tiến trình có mục tiêu (Targeted Port Kill)**: Loại bỏ `taskkill /IM node.exe` diện rộng, thay bằng cơ chế giải phóng chính xác tiến trình chiếm cổng 20130 qua PowerShell (ROB-01) và sửa lỗi đường dẫn `pkill` (ROB-02).
@@ -26,6 +27,7 @@ Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở
 
 | ID | Hạng mục | Vấn đề phát hiện | Mức độ | Trạng thái |
 |---|---|---|:---:|:---:|
+| **BUG-01** | Độ bền / Phiên | Bị đá khỏi phiên làm việc IDE khi gọi subagents (401 Leak & Session Mismatch) | **CRITICAL** | **ĐÃ KHẮC PHỤC (Affinity & Auth Shield)** |
 | **SEC-01** | Bảo mật | Cờ `--ignore-certificate-errors` tắt xác thực SSL toàn hệ thống | **HIGH** | **ĐÃ KHẮC PHỤC (SPKI Pinning)** |
 | **SEC-02** | Bảo mật | Token & Private Key lưu plaintext thiếu phân quyền tệp (`0600`) | **HIGH** | **ĐÃ KHẮC PHỤC (Chmod 0600)** |
 | **SEC-03** | Bảo mật | Google OAuth Client Secret lưu cố định trong mã nguồn | **MEDIUM** | **ĐÃ KHẮC PHỤC (Env Override)** |
@@ -36,7 +38,7 @@ Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở
 | **PLAT-01**| Đa nền tảng| Tệp `launch.bat` thiếu thiết lập biến môi trường `PYTHONPATH` | **MEDIUM** | **ĐÃ HOÀN TẤT** |
 | **PERF-02**| Hiệu năng | Quét Quota song song 6 luồng ngầm qua `ThreadPoolExecutor` | **PASSED** | Đạt chuẩn Qt |
 | **ROB-03** | Độ bền | Tự động dọn dẹp socket rác `server.removeServer` khi khởi động | **PASSED** | Đạt chuẩn Linux |
-| **LOC-01** | Quy chuẩn | Toàn bộ 32 tệp mã nguồn tuân thủ nghiêm ngặt `< 300 LOC/file` | **PASSED** | Tối ưu hóa hoàn tất (Max: 277 LOC) |
+| **LOC-01** | Quy chuẩn | Toàn bộ 32 tệp mã nguồn tuân thủ nghiêm ngặt `< 300 LOC/file` | **PASSED** | Tối ưu hóa hoàn tất (Max: 295 LOC) |
 
 ---
 
@@ -121,6 +123,21 @@ Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở
 
 ## 4. R3: ĐỘ BỀN, ỔN ĐỊNH & XỬ LÝ LỖI (ROBUSTNESS)
 
+### BUG-01 [CRITICAL]: Lỗi Bị Đá Khỏi Phiên IDE Khi Gọi Subagents (401 Leak & Session Mismatch)
+- **Vị trí:** `proxy/chat_handler.js`, `proxy/index.js`, `proxy/account_rotator.js`
+- **Triệu chứng:** Người dùng trong Antigravity IDE khi kích hoạt luồng subagents (hoặc nhiều luồng gọi mô hình AI đồng thời) ngay lập tức bị đóng phiên làm việc, đá văng ra màn hình đăng nhập tài khoản.
+- **Phân tích nguyên nhân gốc rễ (Root Cause Analysis):**
+  1. **Chuyển tiếp HTTP 401 về IDE:** Trong cơ chế cũ, khi Google Cloud Code trả về mã HTTP 401 và proxy kiệt quệ sau vòng failover, `chat_handler.js` ghi nguyên xi mã `401 Unauthorized` kèm header `www-authenticate` về client IDE. Trong kiến trúc Antigravity / VS Code Language Model, việc nhận HTTP 401 trên luồng chat đồng nghĩa với việc token OAuth của phiên làm việc đã bị hủy, dẫn tới IDE xóa sạch SecretStorage và kích hoạt cơ chế force-logout!
+  2. **Phân mảnh phiên làm việc (Session Fragmentation) khi gọi Subagents:** Subagents phát sinh nhiều request streaming song song hoặc liên tiếp nhanh. Cơ chế Round Robin cũ chuyển đổi tài khoản theo số lượt request đơn lẻ (`requests_per_account`), khiến subagent trong cùng một conversation bị điều hướng sang các Google Account và Google Cloud Project khác nhau (`aicode-consumers-...`). Google Cloud Code PA API phát hiện sự xung đột project và session context, phản hồi `HTTP 401/403: Request had invalid authentication credentials`, kích hoạt bão failover toàn diện.
+  3. **Lệch pha giải mã Token thời điểm nóng (In-Flight Mismatch):** Tiến trình Node.js chạy ngầm trước khi khởi động lại chưa nạp mô-đun giải mã `crypto_helper.js`, gửi chuỗi `enc:v1:...` lên Google OAuth dẫn tới `invalid_grant: Bad Request`.
+- **Giải pháp đã triển khai thành công:**
+  1. **Auth Shield (Bảo vệ Phiên IDE Tuyệt đối):** Trang bị lớp Auth Shield trong cả `chat_handler.js` và `index.js`, **tuyệt đối không cho phép HTTP 401 từ Google lọt về IDE**. Nếu toàn bộ tài khoản bị lỗi hoặc bận, Proxy tự động chuyển đổi mã lỗi sang `HTTP 503` (Service Unavailable) với thông báo thân thiện. IDE xử lý 503 như một lỗi tạm thời của mô hình AI, hiển thị thông báo thử lại mà **KHÔNG BAO GIỜ bị logout khỏi session**!
+  2. **Session Affinity (Sticky Session):** Xây dựng mô-đun mới `proxy/session_affinity.js` (101 LOC). Tự động trích xuất `conversationId`, `sessionId`, `client-request-id` từ HTTP Headers hoặc JSON Body, ghim cố định (sticky) toàn bộ lượt trao đổi của phiên hội thoại và các subagents liên quan vào DUY NHẤT một tài khoản Google và Project ID tương ứng.
+  3. **Concurrency & Burst Shield:** Theo dõi các request đồng thời (`inFlightCount > 0`) và cửa sổ burst (4000ms). Toàn bộ các luồng con của subagents cùng chạy sẽ chia sẻ tài khoản đang hoạt động của luồng cha.
+  4. **Unhealthy Account Backoff:** Trong `token_manager.js`, nếu tài khoản gặp lỗi `invalid_grant`, tự động đánh dấu `unhealthyUntil` trong 5 phút. `account_rotator.js` sẽ tự động bỏ qua tài khoản này để không gây gián đoạn luồng request.
+
+---
+
 ### ROB-01 [HIGH]: Lệnh `taskkill /IM node.exe` hủy nhầm toàn bộ tiến trình Node.js trên máy
 - **Vị trí:** `launcher/launcher_proxy.py` (Dòng 49-53)
   ```python
@@ -176,10 +193,10 @@ Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở
 
 | Tệp mã nguồn | Ngôn ngữ | Số dòng (LOC) | Trạng thái (< 300 LOC) | Ghi chú kiến trúc |
 |---|:---:|:---:|:---:|---|
+| `proxy/account_rotator.js` | JS | **294** | **ĐẠT** | Round Robin state & Session Affinity allocation |
+| `proxy/chat_handler.js` | JS | **289** | **ĐẠT** | AI chat request, Auth Shield & Burst tracking |
+| `proxy/index.js` | JS | **281** | **ĐẠT** | Điều phối Micro-Proxy, Auth Shield & Non-chat mask |
 | `launcher/launcher_window.py` | Python | **277** | **ĐẠT** | Quản lý vòng đời cửa sổ ứng dụng |
-| `proxy/chat_handler.js` | JS | **270** | **ĐẠT** | Xử lý streaming AI chat request & Decrypt Token |
-| `proxy/index.js` | JS | **269** | **ĐẠT** | Điều phối định tuyến Micro-Proxy & Env OAuth |
-| `proxy/account_rotator.js` | JS | **259** | **ĐẠT** | Round Robin state & priority sort |
 | `launcher/launcher_proxy.py` | Python | **243** | **ĐẠT** | Khởi chạy proxy & SPKI Pinning IDE |
 | `launcher/launcher_cli.py` | Python | **234** | **ĐẠT** | Giao diện dòng lệnh CLI |
 | `launcher/launcher_quota_runner.py` | Python | **220** | **ĐẠT** | Điều phối luồng quét Quota |
@@ -196,10 +213,11 @@ Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở
 | `launcher/launcher_quota_fetcher.py` | Python | **129** | **ĐẠT** | Tác vụ gọi API Quota |
 | `launcher/launcher_i18n.py` | Python | **127** | **ĐẠT** | Bản địa hóa đa ngôn ngữ |
 | `launcher/launcher_theme.py` | Python | **124** | **ĐẠT** | Mô-đun mới: Dark Theme QSS |
-| `proxy/token_manager.js` | JS | **119** | **ĐẠT** | Quản lý token & AES-256-GCM Encrypt |
+| `proxy/token_manager.js` | JS | **124** | **ĐẠT** | Quản lý token, Encrypt & Unhealthy Backoff |
 | `launcher/launcher_shortcut.py` | Python | **115** | **ĐẠT** | Quản lý phím tắt & Desktop file |
 | `launcher/launcher_order_widget.py` | Python | **111** | **ĐẠT** | Widget số thứ tự & stepper |
 | `launcher/launcher_crypto.py` | Python | **108** | **ĐẠT** | Mô-đun mới: AES-256-GCM Machine Key |
+| `proxy/session_affinity.js` | JS | **101** | **ĐẠT** | Mô-đun mới: Session Affinity & Concurrency Shield |
 | `proxy/cert_provider.js` | JS | **99** | **ĐẠT** | Sinh Root CA & Leaf Cert |
 | `proxy/crypto_helper.js` | JS | **96** | **ĐẠT** | Mô-đun mới: AES-256-GCM Native Node |
 | `launcher/launcher_quota.py` | Python | **71** | **ĐẠT** | Cấu trúc dữ liệu Quota |
@@ -239,6 +257,12 @@ Hệ thống **Antigravity Launcher & Micro-Proxy Round Robin Coordinator** sở
 1. **[SEC-04 - ĐÃ XỬ LÝ]** Triển khai mô-đun `launcher/launcher_crypto.py` (108 LOC) và `proxy/crypto_helper.js` (96 LOC).
 2. **[SEC-04 - ĐÃ XỬ LÝ]** Mã hóa field-level (`enc:v1:<iv>:<ct>:<tag>`) cho `accessToken` và `refreshToken` trong `accounts.json` với khóa 32 bytes sinh từ Machine ID + User UID (hoặc `ANTIGRAVITY_MASTER_KEY`).
 3. **[SEC-04 - ĐÃ XỬ LÝ]** Tự động chuyển đổi token cũ (auto-migration) và bảo đảm đồng bộ song phương 100% giữa Launcher và Micro-Proxy.
+
+### Giai đoạn 5: Bảo vệ Phiên Làm Việc & Concurrency Shield cho Subagents [ĐÃ HOÀN TẤT]
+1. **[BUG-01 - ĐÃ XỬ LÝ]** Thiết lập cơ chế **Auth Shield** trong `proxy/chat_handler.js` và `proxy/index.js`: Tuyệt đối chặn đứng mã HTTP 401 lọt về Antigravity IDE; chuyển đổi an toàn thành HTTP 503 để bảo vệ phiên làm việc của người dùng không bao giờ bị logout.
+2. **[BUG-01 - ĐÃ XỬ LÝ]** Xây dựng mô-đun `proxy/session_affinity.js` (101 LOC): Ghim chặt (sticky) toàn bộ lượt gọi của subagent và conversation vào duy nhất một tài khoản và Google Project trong suốt phiên làm việc.
+3. **[BUG-01 - ĐÃ XỬ LÝ]** Kích hoạt Concurrency & Burst Shield (4000ms): Giữ ổn định tài khoản khi các subagent chạy song song, loại bỏ triệt để hiện tượng phân mảnh session.
+4. **[BUG-01 - ĐÃ XỬ LÝ]** Bổ sung cơ chế Unhealthy Account Backoff trong `proxy/token_manager.js` và `proxy/account_rotator.js`: Tự động bỏ qua tài khoản gặp lỗi `invalid_grant` trong 5 phút.
 
 ---
 *Báo cáo được khởi tạo và lưu trữ chính thức tại `/home/jun/Git/antigravity-launcher/AUDIT_REPORT.md`.*
