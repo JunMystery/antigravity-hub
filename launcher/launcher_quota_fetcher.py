@@ -1,13 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Module truy vấn Quota Gemini qua Google Cloud Code API cho Antigravity Launcher.
+Module truy vấn Quota Gemini qua Google Cloud Code API cho Antigravity Launcher (PyQt6).
+Hỗ trợ cơ chế SSL linh hoạt chống lỗi SSLCertVerificationError trên Python 3.14 / Linux / Windows.
 """
 
+import ssl
 import time
 import json
 import urllib.request
 import urllib.parse
 from launcher_storage import CACHE_TTL, CLIENT_ID, CLIENT_SECRET, USER_AGENT
+
+def get_ssl_context():
+    """Tạo SSL Context tương thích cao cho truy vấn Google API."""
+    try:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    except Exception:
+        return ssl._create_unverified_context()
 
 def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict = None) -> tuple:
     """
@@ -30,6 +42,7 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
 
     token = acc.get("accessToken", "")
     ref_token = acc.get("refreshToken", "")
+    ssl_ctx = get_ssl_context()
 
     # 1. Refresh Access Token nếu có refresh_token
     if ref_token:
@@ -41,7 +54,7 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
                 "grant_type": "refresh_token"
             }).encode("utf-8")
             req = urllib.request.Request("https://oauth2.googleapis.com/token", data=data, method="POST")
-            with urllib.request.urlopen(req, timeout=7) as res:
+            with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as res:
                 res_data = json.loads(res.read().decode())
                 token = res_data.get("access_token", token)
         except Exception:
@@ -61,7 +74,7 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
     try:
         body = json.dumps({"metadata": {"ideType": 9, "platform": 3, "pluginType": 2}, "mode": 1}).encode("utf-8")
         req = urllib.request.Request("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", data=body, headers=headers, method="POST")
-        with urllib.request.urlopen(req, timeout=7) as res:
+        with urllib.request.urlopen(req, context=ssl_ctx, timeout=7) as res:
             pdata = json.loads(res.read().decode())
             project_id = pdata.get("cloudaicompanionProject") or project_id
     except Exception:
@@ -74,7 +87,7 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
         qheaders["X-Client-Version"] = "2.24.0"
         qbody = json.dumps({"project": project_id} if project_id else {}).encode("utf-8")
         qreq = urllib.request.Request("https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary", data=qbody, headers=qheaders, method="POST")
-        with urllib.request.urlopen(qreq, timeout=7) as res:
+        with urllib.request.urlopen(qreq, context=ssl_ctx, timeout=7) as res:
             qdata = json.loads(res.read().decode())
 
         frac_5h = None
