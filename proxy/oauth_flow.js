@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { encryptToken } = require("./crypto_helper");
 
 const SCOPES = [
   "https://www.googleapis.com/auth/cloud-platform",
@@ -98,15 +99,15 @@ function saveAuthorizedAccount(accountData, { accountsFile, profilesFile, profil
     id: accId,
     email: accountData.email,
     name: accountData.name || accountData.email,
-    accessToken: accountData.accessToken,
-    refreshToken: accountData.refreshToken,
+    accessToken: encryptToken(accountData.accessToken),
+    refreshToken: encryptToken(accountData.refreshToken),
     expiresAt: new Date(accountData.expiresAt).toISOString(),
     projectId: accountData.projectId || "aicode-consumers"
   };
   if (existing) Object.assign(existing, newAcc);
   else accounts.push(newAcc);
   accRaw.accounts = accounts;
-  fs.writeFileSync(accountsFile, JSON.stringify(accRaw, null, 2), "utf8");
+  fs.writeFileSync(accountsFile, JSON.stringify(accRaw, null, 2), { encoding: "utf8", mode: 0o600 });
 
   const profRaw = fs.existsSync(profilesFile) ? JSON.parse(fs.readFileSync(profilesFile, "utf8")) : { profiles: [] };
   const profiles = profRaw.profiles || [];

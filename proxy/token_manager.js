@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const { encryptToken, decryptToken } = require("./crypto_helper");
 
 /**
  * Chuyển đổi an toàn giá trị expiresAt thành Epoch timestamp (ms).
@@ -25,7 +26,10 @@ function persistAccountToken(account, accountsFile) {
       const matchId = a.id && a.id === account.id;
       const matchEmail = a.email && a.email.toLowerCase() === (account.email || "").toLowerCase();
       if (matchId || matchEmail) {
-        a.accessToken = account.accessToken;
+        a.accessToken = encryptToken(account.accessToken);
+        if (account.refreshToken) {
+          a.refreshToken = encryptToken(account.refreshToken);
+        }
         a.expiresAt = new Date(account.expiresAt).toISOString();
         found = true;
         break;
@@ -33,7 +37,7 @@ function persistAccountToken(account, accountsFile) {
     }
     if (found) {
       fs.writeFileSync(accountsFile, JSON.stringify(raw, null, 2), { encoding: "utf8", mode: 0o600 });
-      console.log(`[AUTH-PERSIST] [SAVE] Đã lưu Access Token mới cho [${account.email}] vào accounts.json`);
+      console.log(`[AUTH-PERSIST] [SAVE] Đã mã hóa và lưu Access Token mới cho [${account.email}] vào accounts.json`);
     }
   } catch (err) {
     console.error(`[AUTH-PERSIST-ERR] Lỗi ghi accounts.json: ${err.message}`);
@@ -45,6 +49,7 @@ function persistAccountToken(account, accountsFile) {
  */
 async function refreshGoogleAccessToken(account, config) {
   if (!account || !account.refreshToken) return null;
+  const plainRefreshToken = decryptToken(account.refreshToken);
   try {
     const res = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -53,7 +58,7 @@ async function refreshGoogleAccessToken(account, config) {
         client_id: config.GOOGLE_CLIENT_ID,
         client_secret: config.GOOGLE_CLIENT_SECRET,
         grant_type: "refresh_token",
-        refresh_token: account.refreshToken
+        refresh_token: plainRefreshToken
       })
     });
 
@@ -65,6 +70,7 @@ async function refreshGoogleAccessToken(account, config) {
 
     const data = await res.json();
     account.accessToken = data.access_token;
+    account.refreshToken = plainRefreshToken;
     account.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
     console.log(`[AUTH-REFRESH] [OK] Đã tự động cấp mới Token từ Google cho: ${account.email}`);
 
@@ -97,6 +103,9 @@ async function ensureValidToken(account, config) {
   const expiresMs = getExpiresAtEpoch(account.expiresAt);
   if (!account.accessToken || expiresMs - Date.now() < 5 * 60 * 1000) {
     await refreshGoogleAccessToken(account, config);
+  }
+  if (account.accessToken && account.accessToken.startsWith("enc:v1:")) {
+    account.accessToken = decryptToken(account.accessToken);
   }
   return account.accessToken;
 }

@@ -1,6 +1,7 @@
 const https = require("node:https");
 const { ensureValidToken, refreshGoogleAccessToken } = require("./token_manager");
 const { getAgentForAccount } = require("./agent_pool");
+const { decryptToken } = require("./crypto_helper");
 
 /**
  * Kiem tra xem endpoint co phai la AI Chat / Code Generation / Subagent khong
@@ -108,7 +109,9 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
   fwdHeaders["user-agent"] = "antigravity/2.24.0 linux/x64";
 
   if (account && account.accessToken) {
-    fwdHeaders["authorization"] = `Bearer ${account.accessToken}`;
+    const plainToken = decryptToken(account.accessToken);
+    account.accessToken = plainToken;
+    fwdHeaders["authorization"] = `Bearer ${plainToken}`;
   }
 
   if (finalBodyBuffer && finalBodyBuffer.length > 0) {
