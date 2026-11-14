@@ -13,15 +13,40 @@ import sys
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROXY_DIR = os.path.join(BASE_DIR, "proxy")
 
-CONFIG_DIR = os.path.expanduser("~/.config/antigravity-launcher")
+def get_config_dir() -> str:
+    if sys.platform == "win32" and os.environ.get("APPDATA"):
+        return os.path.join(os.environ["APPDATA"], "antigravity-launcher")
+    return os.path.expanduser("~/.config/antigravity-launcher")
+
+def get_profiles_base_dir() -> str:
+    if sys.platform == "win32" and os.environ.get("APPDATA"):
+        return os.path.join(os.environ["APPDATA"], "Antigravity-Profiles")
+    return os.path.expanduser("~/.config/Antigravity-Profiles")
+
+CONFIG_DIR = get_config_dir()
 PROFILES_FILE = os.path.join(CONFIG_DIR, "profiles.json")
 ACCOUNTS_FILE = os.path.join(CONFIG_DIR, "accounts.json")
-PROFILES_BASE_DIR = os.path.expanduser("~/.config/Antigravity-Profiles")
+PROFILES_BASE_DIR = get_profiles_base_dir()
 
 def find_app_binary():
     """Tự động dò tìm executable Antigravity trên máy tính người dùng."""
     if os.environ.get("ANTIGRAVITY_BIN") and os.path.exists(os.environ["ANTIGRAVITY_BIN"]):
         return os.environ["ANTIGRAVITY_BIN"]
+
+    if sys.platform == "win32":
+        candidates = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Antigravity\Antigravity.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Antigravity\Antigravity.exe"),
+            os.path.expandvars(r"%PROGRAMFILES(X86)%\Antigravity\Antigravity.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        which_exe = shutil.which("Antigravity.exe") or shutil.which("antigravity.exe")
+        if which_exe:
+            return which_exe
+        return candidates[0]
+
     which_bin = shutil.which("antigravity")
     if which_bin:
         return which_bin
@@ -42,10 +67,13 @@ def find_app_icon(bin_path):
     """Tìm icon ứng dụng tương ứng với đường dẫn binary."""
     if bin_path:
         d = os.path.dirname(bin_path)
-        for icon_name in ("Antigravity.png", "antigravity.png", "icon.png"):
+        for icon_name in ("Antigravity.ico", "antigravity.ico", "Antigravity.png", "antigravity.png", "icon.png"):
             p = os.path.join(d, icon_name)
             if os.path.exists(p):
                 return p
+    default_icon = os.path.join(BASE_DIR, "icon.png")
+    if os.path.exists(default_icon):
+        return default_icon
     return os.path.expanduser("~/Applications/Antigravity-x64/Antigravity.png")
 
 APP_ICON = find_app_icon(APP_BINARY)

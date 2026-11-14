@@ -1,52 +1,51 @@
 # -*- coding: utf-8 -*-
 """
-Module điều phối các tác vụ quét Quota ngầm và đếm ngược Cooldown cho Launcher Window.
+Module điều phối các tác vụ quét Quota ngầm và đếm ngược Cooldown cho Launcher Window (PyQt6).
 """
 
 import time
 import threading
 import concurrent.futures
-import gi
-
-gi.require_version("Gtk", "3.0")
-from gi.repository import GLib
+from PyQt6.QtCore import QTimer
 
 from launcher_storage import MANUAL_COOLDOWN, load_accounts, save_data
 from launcher_quota_fetcher import fetch_single_account_quota
-from launcher_treeview import get_quota_btn_label
+
+def get_quota_btn_label(loading: bool = False) -> str:
+    """Trả về nhãn cho nút làm mới Quota trong hàng."""
+    return "..." if loading else "⟳"
 
 def start_refresh_cooldown(win, seconds=MANUAL_COOLDOWN):
     """Bắt đầu đếm ngược cooldown chống spam Google API."""
     win.cooldown_remaining = seconds
-    win.btn_refresh_all.set_sensitive(False)
-    win.btn_refresh_all.set_label(f"{seconds}s")
-    GLib.timeout_add_seconds(1, lambda: cooldown_tick(win))
+    if hasattr(win, "btn_refresh_all"):
+        win.btn_refresh_all.setEnabled(False)
+        win.btn_refresh_all.setText(f"{seconds}s")
+    QTimer.singleShot(1000, lambda: cooldown_tick(win))
 
 def cooldown_tick(win):
     """Mỗi giây giảm bộ đếm cooldown; mở lại nút khi hết thời gian chờ."""
     win.cooldown_remaining -= 1
     if win.cooldown_remaining <= 0:
-        win.btn_refresh_all.set_label("⟳")
-        win.btn_refresh_all.set_sensitive(True)
-        return False
-    win.btn_refresh_all.set_label(f"{win.cooldown_remaining}s")
-    return True
-
-def refresh_single_row_quota(win, path_str):
-    """Quét Quota cho riêng một hàng tài khoản được chọn trong TreeView."""
-    try:
-        tree_iter = win.liststore.get_iter_from_string(path_str)
-    except Exception:
+        if hasattr(win, "btn_refresh_all"):
+            win.btn_refresh_all.setText("⟳")
+            win.btn_refresh_all.setEnabled(True)
         return
-    prof_id = win.liststore.get_value(tree_iter, 14)
-    prof_email = win.liststore.get_value(tree_iter, 3)
-    win.liststore.set_value(tree_iter, 15, get_quota_btn_label(loading=True))
+    if hasattr(win, "btn_refresh_all"):
+        win.btn_refresh_all.setText(f"{win.cooldown_remaining}s")
+    QTimer.singleShot(1000, lambda: cooldown_tick(win))
+
+def refresh_single_row_quota(win, prof_id):
+    """Quét Quota cho riêng một tài khoản được chọn."""
+    prof = next((p for p in win.data.get("profiles", []) if p.get("id") == prof_id), None)
+    if not prof:
+        return
+    prof_email = prof.get("email", "")
 
     def worker():
         accs = load_accounts()
         target_email = (prof_email or "").lower()
         matched_acc = next((a for a in accs if a.get("email", "").lower() == target_email or a.get("name", "").lower() == target_email), None)
-        prof = next((p for p in win.data.get("profiles", []) if p.get("id") == prof_id), {})
         if matched_acc:
             q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = fetch_single_account_quota(matched_acc, force=True, cached_info=prof)
         else:
@@ -61,20 +60,16 @@ def refresh_single_row_quota(win, path_str):
                     p["quota_timestamp"] = int(time.time())
                     break
             save_data(win.data)
-            for row in win.liststore:
-                if row[14] == prof_id or row[3] == prof_email:
-                    row[15] = get_quota_btn_label(loading=False)
-                    break
-            return False
-        GLib.idle_add(on_done)
+        QTimer.singleShot(0, on_done)
     threading.Thread(target=worker, daemon=True).start()
 
 def refresh_all_quota(win, widget=None):
     """Quét Quota cho toàn bộ tài khoản bất đồng bộ với ThreadPool."""
     if win.cooldown_remaining > 0:
         return
-    win.btn_refresh_all.set_sensitive(False)
-    win.btn_refresh_all.set_label("...")
+    if hasattr(win, "btn_refresh_all"):
+        win.btn_refresh_all.setEnabled(False)
+        win.btn_refresh_all.setText("...")
     start_refresh_cooldown(win, MANUAL_COOLDOWN)
 
     def worker():
@@ -105,14 +100,13 @@ def refresh_all_quota(win, widget=None):
                         p["quota_timestamp"] = now
                         break
             save_data(win.data)
-            return False
-        GLib.idle_add(on_all_done)
+        QTimer.singleShot(0, on_all_done)
     threading.Thread(target=worker, daemon=True).start()
 
 def auto_refresh_quota(win):
-    """Tự động quét ngầm theo Cache TTL 3 phút (chỉ chạy khi không đang sửa TT)."""
+    """Tự động quét ngầm theo Cache TTL 3 phút (chỉ chạy khi không đang chỉnh sửa)."""
     if getattr(win, "is_editing_order", False):
-        return True
+        return
 
     def worker():
         accs = load_accounts()
@@ -142,7 +136,5 @@ def auto_refresh_quota(win):
                         p["quota_timestamp"] = now
                         break
             save_data(win.data)
-            return False
-        GLib.idle_add(on_done)
+        QTimer.singleShot(0, on_done)
     threading.Thread(target=worker, daemon=True).start()
-    return True

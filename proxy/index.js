@@ -10,6 +10,7 @@ const https = require("node:https");
 const net = require("node:net");
 const fs = require("node:fs");
 const path = require("node:path");
+const os = require("node:os");
 
 const { createLeafCertificate } = require("./cert_provider");
 const { isAiChatEndpoint, executeGoogleChatRequest } = require("./chat_handler");
@@ -18,11 +19,16 @@ const { AccountRotator } = require("./account_rotator");
 const { agentPool } = require("./agent_pool");
 
 const PROXY_PORT = 20130;
+const userHome = os.homedir();
 const CERTS_DIR = path.join(__dirname, "certs");
-const CONFIG_DIR = path.join(process.env.HOME, ".config", "antigravity-launcher");
+const CONFIG_DIR = process.platform === "win32" && process.env.APPDATA
+  ? path.join(process.env.APPDATA, "antigravity-launcher")
+  : path.join(userHome, ".config", "antigravity-launcher");
 const ACCOUNTS_FILE = path.join(CONFIG_DIR, "accounts.json");
 const PROFILES_FILE = path.join(CONFIG_DIR, "profiles.json");
-const PROFILES_BASE_DIR = path.join(process.env.HOME, ".config", "Antigravity-Profiles");
+const PROFILES_BASE_DIR = process.platform === "win32" && process.env.APPDATA
+  ? path.join(process.env.APPDATA, "Antigravity-Profiles")
+  : path.join(userHome, ".config", "Antigravity-Profiles");
 const STATUS_FILE = path.join(CONFIG_DIR, "live_status.json");
 const CMD_FILE = path.join(CONFIG_DIR, "proxy_cmd.json");
 const ROTATOR_STATE_FILE = path.join(CONFIG_DIR, "rotator_state.json");
@@ -236,13 +242,15 @@ proxyServer.listen(PROXY_PORT, "127.0.0.1", () => {
   console.log(`============================================================\n`);
 });
 
-process.on("SIGINT", () => {
+function gracefulShutdown() {
   rotator.saveRotatorState();
   agentPool.clearAllAgents();
   process.exit(0);
-});
-process.on("SIGTERM", () => {
+}
+
+process.on("SIGINT", gracefulShutdown);
+process.on("SIGTERM", gracefulShutdown);
+process.on("exit", () => {
   rotator.saveRotatorState();
   agentPool.clearAllAgents();
-  process.exit(0);
 });

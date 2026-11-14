@@ -1,167 +1,193 @@
 # -*- coding: utf-8 -*-
 """
-Module xây dựng cấu trúc giao diện (Layout) và CSS cho Antigravity Launcher Window.
+Module xây dựng cấu trúc giao diện (Layout) và QSS cho Antigravity Launcher Window (PyQt6).
+Hỗ trợ đầy đủ đa nền tảng Windows và Linux.
 """
 
 import os
-import gi
-
-gi.require_version("Gtk", "3.0")
-gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gtk, Gdk, GdkPixbuf
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QComboBox, QSpinBox, QFrame
+)
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QIcon
 
 from launcher_storage import APP_ICON
-from launcher_treeview import setup_treeview
-from launcher_monitor import build_monitor_frame
 from launcher_i18n import tr, SUPPORTED_LANGUAGES, get_current_language
+from launcher_monitor import build_monitor_frame
 
-def apply_launcher_css():
-    """Tải và áp dụng các quy tắc CSS tùy biến cho ứng dụng."""
-    css_provider = Gtk.CssProvider()
-    css_provider.load_from_data(b"""
-        .btn-launch-big {
+def apply_launcher_style(app):
+    """Áp dụng kiểu giao diện hiện đại đồng nhất qua QSS."""
+    app.setStyleSheet("""
+        QMainWindow {
+            background-color: #1e1e2e;
+            color: #cdd6f4;
+        }
+        QWidget {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-size: 13px;
+            color: #cdd6f4;
+        }
+        QPushButton {
+            background-color: #313244;
+            color: #cdd6f4;
+            border: 1px solid #45475a;
+            border-radius: 4px;
+            padding: 5px 12px;
+            font-weight: 500;
+        }
+        QPushButton:hover {
+            background-color: #45475a;
+        }
+        QPushButton:disabled {
+            background-color: #181825;
+            color: #6c7086;
+            border-color: #313244;
+        }
+        QPushButton#btn_launch {
             background-color: #2980b9;
             color: #ffffff;
             font-weight: bold;
-            font-size: 15px;
-            padding: 10px 20px;
+            font-size: 14px;
+            padding: 10px;
             border-radius: 6px;
+            border: none;
         }
-        .btn-launch-big:hover {
+        QPushButton#btn_launch:hover {
             background-color: #3498db;
         }
-        .btn-header-flat {
-            background: none;
-            border: none;
-            box-shadow: none;
-            padding: 1px 4px;
-            margin: 0;
-            min-height: 0;
-            min-width: 0;
+        QPushButton#btn_launch:disabled {
+            background-color: #313244;
+            color: #6c7086;
         }
-        .btn-header-flat:hover {
-            background-color: rgba(255, 255, 255, 0.12);
+        QTableWidget {
+            background-color: #181825;
+            color: #cdd6f4;
+            gridline-color: #313244;
+            border: 1px solid #313244;
+            border-radius: 6px;
+            selection-background-color: #45475a;
+        }
+        QHeaderView::section {
+            background-color: #313244;
+            color: #cdd6f4;
+            padding: 4px;
+            border: 1px solid #45475a;
+            font-weight: bold;
+        }
+        QComboBox, QSpinBox {
+            background-color: #313244;
+            color: #cdd6f4;
+            border: 1px solid #45475a;
             border-radius: 4px;
+            padding: 4px 8px;
+        }
+        QGroupBox {
+            border: 1px solid #45475a;
+            border-radius: 6px;
+            margin-top: 8px;
+            padding-top: 10px;
+            font-weight: bold;
         }
     """)
-    Gtk.StyleContext.add_provider_for_screen(
-        Gdk.Screen.get_default(),
-        css_provider,
-        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
-    )
 
 def build_launcher_layout(win):
-    """Xây dựng toàn bộ các thành phần widget chính cho Launcher Window."""
-    vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-    vbox.set_margin_top(15)
-    vbox.set_margin_bottom(15)
-    vbox.set_margin_start(16)
-    vbox.set_margin_end(16)
-    win.add(vbox)
+    """Xây dựng các thành phần widget chính cho Launcher Window."""
+    central = QWidget(win)
+    win.setCentralWidget(central)
+    root_layout = QVBoxLayout(central)
+    root_layout.setContentsMargins(16, 14, 16, 14)
+    root_layout.setSpacing(10)
 
-    # Header Box (Icon, Title, Subtitle, Language Dropdown)
-    header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-    icon_img = Gtk.Image.new_from_icon_name("system-users", Gtk.IconSize.DIALOG)
+    # Header Box
+    header = QHBoxLayout()
+    header.setSpacing(10)
+
+    win.icon_lbl = QLabel()
     if os.path.exists(APP_ICON):
-        try:
-            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(APP_ICON, 36, 36, True)
-            icon_img = Gtk.Image.new_from_pixbuf(pixbuf)
-        except Exception:
-            pass
-    header_box.pack_start(icon_img, False, False, 0)
+        pixmap = QPixmap(APP_ICON).scaled(36, 36, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        win.icon_lbl.setPixmap(pixmap)
+    header.addWidget(win.icon_lbl, 0)
 
-    title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    win.title_lbl = Gtk.Label()
-    win.title_lbl.set_markup(f"<b><span size='large'>{tr('app.title')}</span></b>")
-    win.title_lbl.set_xalign(0)
-    win.sub_lbl = Gtk.Label(label=tr("app.subtitle"))
-    win.sub_lbl.set_xalign(0)
-    title_box.pack_start(win.title_lbl, False, False, 0)
-    title_box.pack_start(win.sub_lbl, False, False, 0)
-    header_box.pack_start(title_box, True, True, 0)
+    title_box = QVBoxLayout()
+    title_box.setSpacing(2)
+    win.title_lbl = QLabel(f"<b><span style='font-size:16px;'>{tr('app.title')}</span></b>")
+    win.sub_lbl = QLabel(tr("app.subtitle"))
+    title_box.addWidget(win.title_lbl)
+    title_box.addWidget(win.sub_lbl)
+    header.addLayout(title_box, 1)
 
-    # Drop Down Box chọn ngôn ngữ ở góc phải trên cùng
-    lang_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-    lang_box.set_valign(Gtk.Align.CENTER)
-    win.combo_lang = Gtk.ComboBoxText()
+    win.combo_lang = QComboBox()
     for code, name in SUPPORTED_LANGUAGES:
-        win.combo_lang.append(code, name)
-    win.combo_lang.set_active_id(get_current_language())
-    win.combo_lang.connect("changed", win.on_language_changed)
-    lang_box.pack_end(win.combo_lang, False, False, 0)
-    header_box.pack_end(lang_box, False, False, 0)
+        win.combo_lang.addItem(name, code)
+    idx = win.combo_lang.findData(get_current_language())
+    if idx >= 0:
+        win.combo_lang.setCurrentIndex(idx)
+    win.combo_lang.currentIndexChanged.connect(win.on_language_changed)
+    header.addWidget(win.combo_lang, 0, Qt.AlignmentFlag.AlignVCenter)
+    root_layout.addLayout(header)
 
-    vbox.pack_start(header_box, False, False, 0)
+    # Action Bar (Add, Delete)
+    act_bar = QHBoxLayout()
+    act_bar.setSpacing(8)
+    win.btn_add = QPushButton(tr("btn.add").replace("_", "&"))
+    win.btn_add.clicked.connect(win.on_add_account)
+    act_bar.addWidget(win.btn_add)
 
-    # Action Bar (Thêm, Xóa - Tinh gọn tối đa)
-    act_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    win.btn_add = Gtk.Button.new_with_mnemonic(tr("btn.add"))
-    win.btn_add.connect("clicked", win.on_add_account)
-    act_bar.pack_start(win.btn_add, False, False, 0)
+    win.btn_del = QPushButton(tr("btn.delete").replace("_", "&"))
+    win.btn_del.clicked.connect(win.on_delete_account)
+    act_bar.addWidget(win.btn_del)
+    act_bar.addStretch(1)
+    root_layout.addLayout(act_bar)
 
-    win.btn_del = Gtk.Button.new_with_mnemonic(tr("btn.delete"))
-    win.btn_del.connect("clicked", win.on_delete_account)
-    act_bar.pack_start(win.btn_del, False, False, 0)
+    # Table View placeholder (will be attached by setup_treeview)
+    win.table_container = QVBoxLayout()
+    root_layout.addLayout(win.table_container, 1)
 
-    vbox.pack_start(act_bar, False, False, 0)
+    # Info summary label
+    win.lbl_info = QLabel()
+    root_layout.addWidget(win.lbl_info)
 
-    # Scrolled Window & TreeView
-    scrolled = Gtk.ScrolledWindow()
-    scrolled.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-    scrolled.set_shadow_type(Gtk.ShadowType.ETCHED_IN)
-    scrolled.set_vexpand(True)
+    # Live Monitor Frame
+    win.monitor_frame = build_monitor_frame(win)
+    root_layout.addWidget(win.monitor_frame)
 
-    win.treeview = setup_treeview(win)
-    scrolled.add(win.treeview)
-    vbox.pack_start(scrolled, True, True, 0)
+    # Options Bar
+    sep = QFrame()
+    sep.setFrameShape(QFrame.Shape.HLine)
+    sep.setFrameShadow(QFrame.Shadow.Sunken)
+    root_layout.addWidget(sep)
 
-    win.lbl_info = Gtk.Label()
-    win.lbl_info.set_xalign(0)
-    vbox.pack_start(win.lbl_info, False, False, 0)
+    opt_bar = QHBoxLayout()
+    win.rr_info = QLabel(tr("opt.mode"))
+    opt_bar.addWidget(win.rr_info)
+    opt_bar.addStretch(1)
 
-    # Monitor Frame
-    vbox.pack_start(build_monitor_frame(win), False, False, 2)
-
-    # Options Box
-    sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-    vbox.pack_start(sep, False, False, 2)
-
-    opt_vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-    rr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=15)
-    win.rr_info = Gtk.Label()
-    win.rr_info.set_markup(tr("opt.mode"))
-    rr_box.pack_start(win.rr_info, False, False, 0)
-
-    spin_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-    win.spin_lbl = Gtk.Label(label=tr("opt.req_per_acc"))
-    spin_box.pack_start(win.spin_lbl, False, False, 0)
+    win.spin_lbl = QLabel(tr("opt.req_per_acc"))
+    opt_bar.addWidget(win.spin_lbl)
 
     cur_reqs = win.data.get("settings", {}).get("requests_per_account", 1)
-    adj = Gtk.Adjustment(value=cur_reqs, lower=1, upper=500, step_increment=1)
-    win.spin_reqs = Gtk.SpinButton(adjustment=adj, numeric=True)
-    win.spin_reqs.set_value(cur_reqs)
-    win.spin_reqs.connect("value-changed", win.on_spin_changed)
-    spin_box.pack_start(win.spin_reqs, False, False, 0)
+    win.spin_reqs = QSpinBox()
+    win.spin_reqs.setRange(1, 500)
+    win.spin_reqs.setValue(cur_reqs)
+    win.spin_reqs.valueChanged.connect(win.on_spin_changed)
+    opt_bar.addWidget(win.spin_reqs)
+    root_layout.addLayout(opt_bar)
 
-    rr_box.pack_end(spin_box, False, False, 0)
-    opt_vbox.pack_start(rr_box, False, False, 0)
-    vbox.pack_start(opt_vbox, False, False, 0)
-
-    # Launch Button
-    win.btn_launch = Gtk.Button.new_with_label(tr("btn.launch"))
-    win.btn_launch.set_can_default(True)
-    win.btn_launch.set_size_request(-1, 46)
-    win.btn_launch.connect("clicked", win.on_launch_clicked)
-    win.btn_launch.get_style_context().add_class("btn-launch-big")
-    vbox.pack_start(win.btn_launch, False, False, 4)
+    # Big Launch Button
+    win.btn_launch = QPushButton(tr("btn.launch"))
+    win.btn_launch.setObjectName("btn_launch")
+    win.btn_launch.setFixedHeight(44)
+    win.btn_launch.clicked.connect(win.on_launch_clicked)
+    root_layout.addWidget(win.btn_launch)
 
 def retranslate_layout(win):
-    """Làm mới toàn bộ nhãn tĩnh trên layout khi đổi ngôn ngữ."""
-    win.set_title(tr("app.title"))
-    win.title_lbl.set_markup(f"<b><span size='large'>{tr('app.title')}</span></b>")
-    win.sub_lbl.set_text(tr("app.subtitle"))
-    win.btn_add.set_label(tr("btn.add"))
-    win.btn_del.set_label(tr("btn.delete"))
-    win.rr_info.set_markup(tr("opt.mode"))
-    win.spin_lbl.set_text(tr("opt.req_per_acc"))
-    win.btn_launch.set_label(tr("btn.launch"))
+    """Cập nhật toàn bộ nhãn tĩnh trên layout khi đổi ngôn ngữ."""
+    win.setWindowTitle(tr("app.title"))
+    win.title_lbl.setText(f"<b><span style='font-size:16px;'>{tr('app.title')}</span></b>")
+    win.sub_lbl.setText(tr("app.subtitle"))
+    win.btn_add.setText(tr("btn.add").replace("_", "&"))
+    win.btn_del.setText(tr("btn.delete").replace("_", "&"))
+    win.rr_info.setText(tr("opt.mode"))
+    win.spin_lbl.setText(tr("opt.req_per_acc"))
+    win.btn_launch.setText(tr("btn.launch"))

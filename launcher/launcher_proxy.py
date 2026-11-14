@@ -27,13 +27,16 @@ def stop_proxy():
         try:
             with open(PID_FILE, "r") as f:
                 pid = int(f.read().strip())
-            os.kill(pid, signal.SIGTERM)
-            time.sleep(0.1)
-            try:
-                os.kill(pid, 0)
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                os.kill(pid, signal.SIGTERM)
+                time.sleep(0.1)
+                try:
+                    os.kill(pid, 0)
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
         except Exception:
             pass
         try:
@@ -41,14 +44,20 @@ def stop_proxy():
         except OSError:
             pass
 
-    try:
-        subprocess.run(["fuser", "-k", f"{PROXY_PORT}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-    try:
-        subprocess.run(["pkill", "-f", "antigravity-token-proxy/index.js"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
+    if sys.platform == "win32":
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "node.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    else:
+        try:
+            subprocess.run(["fuser", "-k", f"{PROXY_PORT}/tcp"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        try:
+            subprocess.run(["pkill", "-f", "antigravity-token-proxy/index.js"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
     status_file = os.path.join(CONFIG_DIR, "live_status.json")
     try:
@@ -76,12 +85,14 @@ def ensure_proxy_running():
                 log_f = open(log_file_path, "a", encoding="utf-8")
             except Exception:
                 log_f = subprocess.DEVNULL
-            proc = subprocess.Popen(
-                ["node", PROXY_SCRIPT],
-                stdout=log_f,
-                stderr=subprocess.STDOUT,
-                start_new_session=True
-            )
+
+            kwargs = {"stdout": log_f, "stderr": subprocess.STDOUT}
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(["node", PROXY_SCRIPT], **kwargs)
             try:
                 with open(PID_FILE, "w") as f:
                     f.write(str(proc.pid))
@@ -121,37 +132,44 @@ def stop_all_launched_apps():
         except Exception:
             pass
 
-    for pid in pids_to_kill:
-        try:
-            pgid = os.getpgid(pid)
-            os.killpg(pgid, signal.SIGTERM)
-        except (OSError, ProcessLookupError):
+    if sys.platform == "win32":
+        for pid in pids_to_kill:
             try:
-                os.kill(pid, signal.SIGTERM)
-            except OSError:
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
                 pass
-
-    if pids_to_kill:
-        time.sleep(0.2)
-
-    for pid in pids_to_kill:
-        try:
-            pgid = os.getpgid(pid)
-            os.killpg(pgid, signal.SIGKILL)
-        except (OSError, ProcessLookupError):
+    else:
+        for pid in pids_to_kill:
             try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except OSError:
+                    pass
 
-    try:
-        subprocess.run(
-            ["pkill", "-f", "Antigravity-Profiles"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-    except Exception:
-        pass
+        if pids_to_kill:
+            time.sleep(0.2)
+
+        for pid in pids_to_kill:
+            try:
+                pgid = os.getpgid(pid)
+                os.killpg(pgid, signal.SIGKILL)
+            except (OSError, ProcessLookupError):
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except OSError:
+                    pass
+
+        try:
+            subprocess.run(
+                ["pkill", "-f", "Antigravity-Profiles"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
 
     LAUNCHED_PIDS = []
     try:
@@ -166,13 +184,12 @@ def launch_profile(data_dir: str, use_proxy: bool = True) -> bool:
 
     user_data = os.path.join(data_dir, "Antigravity")
     os.makedirs(user_data, exist_ok=True)
-    env["XDG_CONFIG_HOME"] = data_dir
+    if sys.platform != "win32":
+        env["XDG_CONFIG_HOME"] = data_dir
 
-    cmd = [
-        APP_BINARY,
-        f"--user-data-dir={user_data}",
-        "--password-store=basic"
-    ]
+    cmd = [APP_BINARY, f"--user-data-dir={user_data}"]
+    if sys.platform != "win32":
+        cmd.append("--password-store=basic")
 
     ensure_proxy_running()
     if os.path.exists(ROOT_CA):
@@ -194,13 +211,13 @@ def launch_profile(data_dir: str, use_proxy: bool = True) -> bool:
     cmd.insert(1, f"--proxy-pac-script={PROXY_PAC}")
 
     try:
-        proc = subprocess.Popen(
-            cmd,
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
+        kwargs = {"env": env, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        else:
+            kwargs["start_new_session"] = True
+
+        proc = subprocess.Popen(cmd, **kwargs)
         register_launched_pid(proc.pid)
         return True
     except Exception as e:
