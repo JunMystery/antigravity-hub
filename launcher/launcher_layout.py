@@ -147,6 +147,14 @@ def build_launcher_layout(win):
     opt_vbox.pack_start(rr_box, False, False, 0)
     vbox.pack_start(opt_vbox, False, False, 0)
 
+    # Launch Button
+    win.btn_launch = Gtk.Button.new_with_label(tr("btn.launch"))
+    win.btn_launch.set_can_default(True)
+    win.btn_launch.set_size_request(-1, 46)
+    win.btn_launch.connect("clicked", win.on_launch_clicked)
+    win.btn_launch.get_style_context().add_class("btn-launch-big")
+    vbox.pack_start(win.btn_launch, False, False, 4)
+
 def retranslate_layout(win):
     """Làm mới toàn bộ nhãn tĩnh trên layout khi đổi ngôn ngữ."""
     win.set_title(tr("app.title"))
@@ -156,3 +164,4 @@ def retranslate_layout(win):
     win.btn_del.set_label(tr("btn.delete"))
     win.rr_info.set_markup(tr("opt.mode"))
     win.spin_lbl.set_text(tr("opt.req_per_acc"))
+    win.btn_launch.set_label(tr("btn.launch"))
