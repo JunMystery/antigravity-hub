@@ -11,21 +11,25 @@ echo "=== Cài đặt Antigravity Launcher & Micro-Proxy ==="
 command -v python3 >/dev/null 2>&1 || { echo "[ERROR] Cần cài đặt python3 trước."; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "[ERROR] Cần cài đặt nodejs (v18+) trước."; exit 1; }
 
-# 2. Cài đặt dependencies cho Micro-Proxy
-echo "[1/3] Cài đặt dependencies cho Micro-Proxy (Node.js)..."
+# 2. Cài đặt dependencies cho Micro-Proxy và Python Launcher
+echo "[1/4] Cài đặt dependencies cho Micro-Proxy (Node.js)..."
 cd "${SCRIPT_DIR}/proxy"
 if [ -f "package.json" ]; then
     npm install --silent --no-audit --no-fund || npm install
 fi
+cd "${SCRIPT_DIR}"
+
+echo "[2/4] Cài đặt phụ thuộc Python (PyQt6, requests)..."
+pip install --break-system-packages -r "${SCRIPT_DIR}/requirements.txt" 2>/dev/null || pip install -r "${SCRIPT_DIR}/requirements.txt" 2>/dev/null || true
 
 # 3. Tạo thư mục cấu hình chuẩn
-echo "[2/3] Khởi tạo thư mục cấu hình ~/.config/antigravity-launcher..."
+echo "[3/4] Khởi tạo thư mục cấu hình ~/.config/antigravity-launcher..."
 mkdir -p "${HOME}/.config/antigravity-launcher"
 mkdir -p "${HOME}/.config/Antigravity-Profiles"
 mkdir -p "${TARGET_BIN_DIR}"
 
 # 4. Tạo liên kết biểu tượng (Symlink)
-echo "[3/3] Tạo symlink antigravity-launcher vào ${TARGET_BIN_DIR}..."
+echo "[4/4] Tạo symlink antigravity-launcher vào ${TARGET_BIN_DIR}..."
 chmod +x "${SCRIPT_DIR}/bin/antigravity-launcher"
 ln -sf "${SCRIPT_DIR}/bin/antigravity-launcher" "${TARGET_BIN_DIR}/antigravity-launcher"
 
