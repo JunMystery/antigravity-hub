@@ -28,12 +28,15 @@ mkdir -p "${HOME}/.config/antigravity-launcher"
 mkdir -p "${HOME}/.config/Antigravity-Profiles"
 mkdir -p "${TARGET_BIN_DIR}"
 
-# 4. Tạo liên kết biểu tượng (Symlink)
-echo "[4/4] Tạo symlink antigravity-launcher vào ${TARGET_BIN_DIR}..."
-chmod +x "${SCRIPT_DIR}/bin/antigravity-launcher"
+# 4. Tạo liên kết biểu tượng (Symlink) & Shortcut Desktop
+echo "[4/4] Tạo symlink và Shortcut Desktop..."
+chmod +x "${SCRIPT_DIR}/bin/antigravity-launcher" "${SCRIPT_DIR}/launch.sh"
 ln -sf "${SCRIPT_DIR}/bin/antigravity-launcher" "${TARGET_BIN_DIR}/antigravity-launcher"
+python3 "${SCRIPT_DIR}/launcher/main.py" --create-shortcut || true
 
 echo ""
 echo "=== Cài đặt hoàn tất! ==="
-echo "Bạn có thể khởi chạy bằng lệnh: antigravity-launcher"
-echo "Hoặc chạy trực tiếp: ${SCRIPT_DIR}/bin/antigravity-launcher"
+echo "Bạn có thể khởi chạy bằng:"
+echo "  1. Shortcut trên màn hình Desktop: 'Antigravity Launcher'"
+echo "  2. Lệnh terminal: antigravity-launcher"
+echo "  3. Hoặc chạy trực tiếp: ./launch.sh"

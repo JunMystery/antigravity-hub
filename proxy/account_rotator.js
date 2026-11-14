@@ -15,6 +15,7 @@ class AccountRotator {
     this.currentAccRequestsServed = 0;
     this.requestsPerAccount = 1;
     this.isRestored = false;
+    this.rotationPaused = false;
   }
 
   getCurrentAccount() {
@@ -42,8 +43,12 @@ class AccountRotator {
     this.currentAccRequestsServed++;
     const served = this.currentAccRequestsServed;
 
-    if (this.currentAccRequestsServed >= this.requestsPerAccount) {
-      this.nextAccount();
+    if (!this.rotationPaused) {
+      if (this.currentAccRequestsServed >= this.requestsPerAccount) {
+        this.nextAccount();
+      } else {
+        this.saveRotatorState();
+      }
     } else {
       this.saveRotatorState();
     }
@@ -68,6 +73,7 @@ class AccountRotator {
         account_index: this.accountIndex,
         current_req_served: this.currentAccRequestsServed,
         total_requests: this.requestCount,
+        rotation_paused: this.rotationPaused,
         updated_at: Date.now()
       };
       fs.writeFileSync(this.config.ROTATOR_STATE_FILE, JSON.stringify(state, null, 2), "utf8");
@@ -89,6 +95,9 @@ class AccountRotator {
       const state = JSON.parse(raw);
       if (typeof state.total_requests === "number") {
         this.requestCount = state.total_requests;
+      }
+      if (typeof state.rotation_paused === "boolean") {
+        this.rotationPaused = state.rotation_paused;
       }
 
       if (this.accounts.length === 0) return;
@@ -198,11 +207,44 @@ class AccountRotator {
         total_requests: this.requestCount,
         endpoint: "manual_switch",
         method: "SWITCH",
-        status: "idle"
+        status: this.rotationPaused ? "paused" : "standby",
+        paused: this.rotationPaused
       });
       if (httpRes) {
         httpRes.writeHead(200, { "Content-Type": "application/json" });
-        httpRes.end(JSON.stringify({ success: true, message: `Switched to ${cur?.email}` }));
+        httpRes.end(JSON.stringify({ success: true, message: `Switched to ${cur?.email}`, paused: this.rotationPaused }));
+      }
+      return;
+    }
+
+    if (cmd === "toggle_pause" || cmd === "pause" || cmd === "resume") {
+      if (cmd === "pause") {
+        this.rotationPaused = true;
+      } else if (cmd === "resume") {
+        this.rotationPaused = false;
+      } else {
+        this.rotationPaused = !this.rotationPaused;
+      }
+      this.saveRotatorState();
+      const cur = this.getCurrentAccount();
+      const statusLabel = this.rotationPaused ? "paused" : "standby";
+      console.log(`[ROUND-ROBIN] Che do xoay vong: ${this.rotationPaused ? "TAM DUNG (PAUSED)" : "HOAT DONG (STANDBY)"}`);
+      writeLiveStatus({
+        active: false,
+        timestamp: Date.now(),
+        account_email: cur?.email || "San sang",
+        account_name: cur?.name || cur?.email || "San sang",
+        current_req: this.currentAccRequestsServed,
+        requests_per_account: this.requestsPerAccount,
+        total_requests: this.requestCount,
+        endpoint: this.rotationPaused ? "Tam dung xoay vong" : "Dang lang nghe Port 20130",
+        method: this.rotationPaused ? "PAUSE" : "STANDBY",
+        status: statusLabel,
+        paused: this.rotationPaused
+      });
+      if (httpRes) {
+        httpRes.writeHead(200, { "Content-Type": "application/json" });
+        httpRes.end(JSON.stringify({ success: true, paused: this.rotationPaused, status: statusLabel }));
       }
       return;
     }

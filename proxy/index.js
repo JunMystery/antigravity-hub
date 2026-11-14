@@ -68,6 +68,7 @@ function getRequestContext() {
     get currentAccRequestsServed() { return rotator.currentAccRequestsServed; },
     get requestsPerAccount() { return rotator.requestsPerAccount; },
     get requestCount() { return rotator.requestCount; },
+    get rotationPaused() { return rotator.rotationPaused; },
     writeLiveStatus
   };
 }
@@ -132,7 +133,7 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
     return;
   }
 
-  // AI Chat requests
+  // AI Chat & Subagent requests
   const chunks = [];
   req.on("data", (chunk) => chunks.push(chunk));
   req.on("end", async () => {
@@ -142,8 +143,11 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
     const accName = currentAcc ? currentAcc.email : "UNKNOWN";
     const servedCount = allocation.servedCount;
     const reqNum = allocation.requestNumber;
+    const rawHost = req.headers["host"] || "daily-cloudcode-pa.googleapis.com";
+    const isSubagent = rawHost.includes("generativelanguage") || rawHost.includes("companion") || reqUrl.includes("/models/");
+    const tag = isSubagent ? "[SUBAGENT]" : "[CHAT]";
 
-    console.log(`[ROUND-ROBIN-CHAT #${reqNum}] ${req.method} ${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
+    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${req.method} ${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
 
     writeLiveStatus({
       active: true,
@@ -153,7 +157,7 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       current_req: servedCount,
       requests_per_account: rotator.requestsPerAccount,
       total_requests: reqNum,
-      endpoint: reqUrl.split("?")[0],
+      endpoint: `${tag} ${reqUrl.split("?")[0]}`,
       method: req.method,
       status: "sending"
     });
@@ -197,11 +201,16 @@ proxyServer.on("connect", (req, clientSocket, head) => {
   const [targetHost, targetPort] = req.url.split(":");
   const port = parseInt(targetPort, 10) || 443;
 
-  if (
+  const isTargetAiHost =
     targetHost === "daily-cloudcode-pa.googleapis.com" ||
     targetHost === "cloudcode-pa.googleapis.com" ||
-    (targetHost.endsWith(".googleapis.com") && targetHost.includes("cloudcode"))
-  ) {
+    targetHost === "generativelanguage.googleapis.com" ||
+    targetHost === "cloudaicompanion.googleapis.com" ||
+    targetHost.includes("cloudcode") ||
+    targetHost.includes("companion") ||
+    targetHost.includes("generativelanguage");
+
+  if (isTargetAiHost) {
     clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
     internalHttpsServer.emit("connection", clientSocket);
     return;
@@ -229,7 +238,8 @@ proxyServer.listen(PROXY_PORT, "127.0.0.1", () => {
     total_requests: rotator.requestCount,
     endpoint: "",
     method: "",
-    status: "idle"
+    status: rotator.rotationPaused ? "paused" : "standby",
+    paused: rotator.rotationPaused
   });
 
   console.log(`\n============================================================`);

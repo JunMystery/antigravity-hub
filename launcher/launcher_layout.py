@@ -60,6 +60,49 @@ def apply_launcher_style(app):
             background-color: #313244;
             color: #6c7086;
         }
+        QPushButton#btn_launch_app {
+            background-color: #2980b9;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 13px;
+            padding: 10px;
+            border-radius: 6px;
+            border: none;
+        }
+        QPushButton#btn_launch_app:hover {
+            background-color: #3498db;
+        }
+        QPushButton#btn_launch_app:disabled {
+            background-color: #313244;
+            color: #6c7086;
+        }
+        QPushButton#btn_launch_ide {
+            background-color: #7287fd;
+            color: #ffffff;
+            font-weight: bold;
+            font-size: 13px;
+            padding: 10px;
+            border-radius: 6px;
+            border: none;
+        }
+        QPushButton#btn_launch_ide:hover {
+            background-color: #8839ef;
+        }
+        QPushButton#btn_launch_ide:disabled {
+            background-color: #313244;
+            color: #6c7086;
+        }
+        QPushButton#btn_settings {
+            background-color: #313244;
+            color: #cdd6f4;
+            font-size: 14px;
+            border: 1px solid #45475a;
+            border-radius: 4px;
+            padding: 2px 6px;
+        }
+        QPushButton#btn_settings:hover {
+            background-color: #45475a;
+        }
         QTableWidget {
             background-color: #181825;
             color: #cdd6f4;
@@ -125,9 +168,17 @@ def build_launcher_layout(win):
         win.combo_lang.setCurrentIndex(idx)
     win.combo_lang.currentIndexChanged.connect(win.on_language_changed)
     header.addWidget(win.combo_lang, 0, Qt.AlignmentFlag.AlignVCenter)
+
+    # Settings icon button
+    win.btn_settings = QPushButton("⚙")
+    win.btn_settings.setObjectName("btn_settings")
+    win.btn_settings.setFixedSize(30, 28)
+    win.btn_settings.setToolTip(tr("settings.title"))
+    win.btn_settings.clicked.connect(win.on_settings_clicked)
+    header.addWidget(win.btn_settings, 0, Qt.AlignmentFlag.AlignVCenter)
     root_layout.addLayout(header)
 
-    # Action Bar (Add, Delete)
+    # Action Bar (Add, Delete on Left, Auto & Refresh Quota on Right)
     act_bar = QHBoxLayout()
     act_bar.setSpacing(8)
     win.btn_add = QPushButton(tr("btn.add").replace("_", "&"))
@@ -137,7 +188,22 @@ def build_launcher_layout(win):
     win.btn_del = QPushButton(tr("btn.delete").replace("_", "&"))
     win.btn_del.clicked.connect(win.on_delete_account)
     act_bar.addWidget(win.btn_del)
+
     act_bar.addStretch(1)
+
+    win.btn_auto = QPushButton()
+    win.btn_auto.setFixedHeight(28)
+    win.btn_auto.clicked.connect(win.on_toggle_auto_quota)
+    act_bar.addWidget(win.btn_auto)
+
+    win.btn_refresh_all = QPushButton("⟳")
+    win.btn_refresh_all.setObjectName("btn_refresh_all")
+    win.btn_refresh_all.setToolTip(tr("tooltip.refresh_all"))
+    win.btn_refresh_all.setFixedSize(36, 28)
+    win.btn_refresh_all.setStyleSheet("padding: 0px; font-size: 13px;")
+    win.btn_refresh_all.clicked.connect(win.on_refresh_all_quota)
+    act_bar.addWidget(win.btn_refresh_all)
+
     root_layout.addLayout(act_bar)
 
     # Table View placeholder (will be attached by setup_treeview)
@@ -174,12 +240,24 @@ def build_launcher_layout(win):
     opt_bar.addWidget(win.spin_reqs)
     root_layout.addLayout(opt_bar)
 
-    # Big Launch Button
-    win.btn_launch = QPushButton(tr("btn.launch"))
-    win.btn_launch.setObjectName("btn_launch")
-    win.btn_launch.setFixedHeight(44)
-    win.btn_launch.clicked.connect(win.on_launch_clicked)
-    root_layout.addWidget(win.btn_launch)
+    # Launch Buttons (App and IDE)
+    launch_box = QHBoxLayout()
+    launch_box.setSpacing(10)
+
+    win.btn_launch_app = QPushButton("🚀 " + tr("btn.launch_app"))
+    win.btn_launch_app.setObjectName("btn_launch_app")
+    win.btn_launch_app.setFixedHeight(42)
+    win.btn_launch_app.clicked.connect(win.on_launch_app_clicked)
+    launch_box.addWidget(win.btn_launch_app, 1)
+    win.btn_launch = win.btn_launch_app  # Legacy compatibility alias
+
+    win.btn_launch_ide = QPushButton("💻 " + tr("btn.launch_ide"))
+    win.btn_launch_ide.setObjectName("btn_launch_ide")
+    win.btn_launch_ide.setFixedHeight(42)
+    win.btn_launch_ide.clicked.connect(win.on_launch_ide_clicked)
+    launch_box.addWidget(win.btn_launch_ide, 1)
+
+    root_layout.addLayout(launch_box)
 
 def retranslate_layout(win):
     """Cập nhật toàn bộ nhãn tĩnh trên layout khi đổi ngôn ngữ."""
@@ -188,6 +266,20 @@ def retranslate_layout(win):
     win.sub_lbl.setText(tr("app.subtitle"))
     win.btn_add.setText(tr("btn.add").replace("_", "&"))
     win.btn_del.setText(tr("btn.delete").replace("_", "&"))
+    if hasattr(win, "btn_refresh_all"):
+        win.btn_refresh_all.setToolTip(tr("tooltip.refresh_all"))
+    if hasattr(win, "btn_settings"):
+        win.btn_settings.setToolTip(tr("settings.title"))
+    if hasattr(win, "monitor_frame") and win.monitor_frame:
+        win.monitor_frame.setTitle(tr("monitor.box_title"))
+    if hasattr(win, "btn_proxy_next") and win.btn_proxy_next:
+        win.btn_proxy_next.setText(tr("monitor.btn_next"))
+        win.btn_proxy_next.setToolTip(tr("monitor.btn_next_tooltip"))
     win.rr_info.setText(tr("opt.mode"))
     win.spin_lbl.setText(tr("opt.req_per_acc"))
-    win.btn_launch.setText(tr("btn.launch"))
+    if hasattr(win, "btn_launch_app"):
+        win.btn_launch_app.setText("🚀 " + tr("btn.launch_app"))
+    if hasattr(win, "btn_launch_ide"):
+        win.btn_launch_ide.setText("💻 " + tr("btn.launch_ide"))
+    if hasattr(win, "update_live_monitor"):
+        win.update_live_monitor()

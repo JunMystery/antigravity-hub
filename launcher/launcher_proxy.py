@@ -12,7 +12,8 @@ import signal
 import subprocess
 from launcher_storage import (
     CONFIG_DIR, PROXY_PORT, PROXY_SCRIPT, PID_FILE,
-    LAUNCHED_APPS_FILE, ROOT_CA, PROXY_PAC, APP_BINARY
+    LAUNCHED_APPS_FILE, ROOT_CA, PROXY_PAC, APP_BINARY,
+    get_app_binary, get_ide_binary
 )
 
 LAUNCHED_PIDS = []
@@ -178,7 +179,11 @@ def stop_all_launched_apps():
     except OSError:
         pass
 
-def launch_profile(data_dir: str, use_proxy: bool = True) -> bool:
+def launch_profile(data_dir: str, target: str = "app", use_proxy: bool = True) -> bool:
+    if isinstance(target, bool):
+        use_proxy = target
+        target = "app"
+
     os.makedirs(data_dir, exist_ok=True)
     env = os.environ.copy()
 
@@ -187,28 +192,36 @@ def launch_profile(data_dir: str, use_proxy: bool = True) -> bool:
     if sys.platform != "win32":
         env["XDG_CONFIG_HOME"] = data_dir
 
-    cmd = [APP_BINARY, f"--user-data-dir={user_data}"]
+    bin_path = get_ide_binary() if target == "ide" else get_app_binary()
+    if not bin_path or not os.path.exists(bin_path):
+        bin_path = APP_BINARY if target != "ide" else None
+        if not bin_path or not os.path.exists(bin_path):
+            print(f"Không tìm thấy binary cho target '{target}'", file=sys.stderr)
+            return False
+
+    cmd = [bin_path, f"--user-data-dir={user_data}"]
     if sys.platform != "win32":
         cmd.append("--password-store=basic")
 
-    ensure_proxy_running()
-    if os.path.exists(ROOT_CA):
-        env["NODE_EXTRA_CA_CERTS"] = ROOT_CA
-        env["SSL_CERT_FILE"] = ROOT_CA
-        env["REQUESTS_CA_BUNDLE"] = ROOT_CA
+    if use_proxy:
+        ensure_proxy_running()
+        if os.path.exists(ROOT_CA):
+            env["NODE_EXTRA_CA_CERTS"] = ROOT_CA
+            env["SSL_CERT_FILE"] = ROOT_CA
+            env["REQUESTS_CA_BUNDLE"] = ROOT_CA
 
-    proxy_url = f"http://127.0.0.1:{PROXY_PORT}"
-    env["HTTPS_PROXY"] = proxy_url
-    env["HTTP_PROXY"] = proxy_url
-    env["https_proxy"] = proxy_url
-    env["http_proxy"] = proxy_url
-    env["ALL_PROXY"] = proxy_url
-    env["all_proxy"] = proxy_url
-    env["NO_PROXY"] = "localhost,127.0.0.1"
-    env["no_proxy"] = "localhost,127.0.0.1"
+        proxy_url = f"http://127.0.0.1:{PROXY_PORT}"
+        env["HTTPS_PROXY"] = proxy_url
+        env["HTTP_PROXY"] = proxy_url
+        env["https_proxy"] = proxy_url
+        env["http_proxy"] = proxy_url
+        env["ALL_PROXY"] = proxy_url
+        env["all_proxy"] = proxy_url
+        env["NO_PROXY"] = "localhost,127.0.0.1"
+        env["no_proxy"] = "localhost,127.0.0.1"
 
-    cmd.insert(1, "--ignore-certificate-errors")
-    cmd.insert(1, f"--proxy-pac-script={PROXY_PAC}")
+        cmd.insert(1, "--ignore-certificate-errors")
+        cmd.insert(1, f"--proxy-pac-script={PROXY_PAC}")
 
     try:
         kwargs = {"env": env, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}

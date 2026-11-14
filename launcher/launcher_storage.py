@@ -63,18 +63,76 @@ def find_app_binary():
 
 APP_BINARY = find_app_binary()
 
-def find_app_icon(bin_path):
-    """Tìm icon ứng dụng tương ứng với đường dẫn binary."""
+def find_ide_binary() -> str:
+    """Tự động dò tìm Antigravity IDE (VS Code Code Editor) trên máy tính."""
+    if os.environ.get("ANTIGRAVITY_IDE_BIN") and os.path.exists(os.environ["ANTIGRAVITY_IDE_BIN"]):
+        return os.environ["ANTIGRAVITY_IDE_BIN"]
+
+    if sys.platform == "win32":
+        candidates = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Antigravity IDE\Antigravity.exe"),
+            os.path.expandvars(r"%PROGRAMFILES%\Antigravity IDE\Antigravity.exe"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Microsoft VS Code\Code.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        which_ide = shutil.which("antigravity-ide.exe") or shutil.which("code.cmd") or shutil.which("code.exe")
+        return which_ide or ""
+
+    which_ide = shutil.which("antigravity-ide") or shutil.which("code")
+    if which_ide:
+        return which_ide
+    candidates = [
+        os.path.expanduser("~/.local/share/programs/antigravity-ide/antigravity-ide"),
+        "/opt/antigravity-ide/antigravity-ide",
+        "/usr/local/bin/antigravity-ide",
+        "/usr/bin/code"
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            return c
+    return ""
+
+IDE_BINARY = find_ide_binary()
+
+def get_app_binary(data=None) -> str:
+    if data is None:
+        data = load_data()
+    if data and data.get("settings", {}).get("app_binary"):
+        return data["settings"]["app_binary"]
+    return APP_BINARY
+
+def get_ide_binary(data=None) -> str:
+    if data is None:
+        data = load_data()
+    if data and data.get("settings", {}).get("ide_binary"):
+        return data["settings"]["ide_binary"]
+    return find_ide_binary()
+
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+ASSET_ICO = os.path.join(ASSETS_DIR, "Antigravity.ico")
+ASSET_PNG = os.path.join(ASSETS_DIR, "Antigravity.png")
+
+def find_app_icon(bin_path=None, preferred_ext=None):
+    """Tìm icon ứng dụng từ thư mục assets nội bộ hoặc từ binary."""
+    if preferred_ext == "ico" and os.path.exists(ASSET_ICO):
+        return ASSET_ICO
+    if preferred_ext == "png" and os.path.exists(ASSET_PNG):
+        return ASSET_PNG
+    if sys.platform == "win32" and os.path.exists(ASSET_ICO):
+        return ASSET_ICO
+    if os.path.exists(ASSET_PNG):
+        return ASSET_PNG
+    if os.path.exists(ASSET_ICO):
+        return ASSET_ICO
     if bin_path:
         d = os.path.dirname(bin_path)
-        for icon_name in ("Antigravity.ico", "antigravity.ico", "Antigravity.png", "antigravity.png", "icon.png"):
+        for icon_name in ("Antigravity.png", "Antigravity.ico", "icon.png"):
             p = os.path.join(d, icon_name)
             if os.path.exists(p):
                 return p
-    default_icon = os.path.join(BASE_DIR, "icon.png")
-    if os.path.exists(default_icon):
-        return default_icon
-    return os.path.expanduser("~/Applications/Antigravity-x64/Antigravity.png")
+    return os.path.join(BASE_DIR, "icon.png")
 
 APP_ICON = find_app_icon(APP_BINARY)
 
@@ -107,7 +165,7 @@ USER_AGENT = "antigravity/hub/2.24.0 linux/x64"
 
 PROXY_PAC = (
     "data:application/x-ns-proxy-autoconfig;base64,"
-    "ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG9zdCkgeyBpZiAoaG9zdCA9PT0gJ2RhaWx5LWNsb3VkY29kZS1wYS5nb29nbGVhcGlzLmNvbScgfHwgaG9zdCA9PT0gJ2Nsb3VkY29kZS1wYS5nb29nbGVhcGlzLmNvbScgfHwgdXJsLmluZGV4T2YoJ2RhaWx5LWNsb3VkY29kZS1wYS5nb29nbGVhcGlzLmNvbScpICE9PSAtMSB8fCB1cmwuaW5kZXhPZignY2xvdWRjb2RlLXBhLmdvb2dsZWFwaXMuY29tJykgIT09IC0xKSB7IHJldHVybiAnUFJPWFkgMTI3LjAuMC4xOjIwMTMwOyBESVJFQ1QnOyB9IHJldHVybiAnRElSRUNUJzsgfQ=="
+    "ZnVuY3Rpb24gRmluZFByb3h5Rm9yVVJMKHVybCwgaG9zdCkgewogICAgaWYgKGhvc3QgPT09ICdkYWlseS1jbG91ZGNvZGUtcGEuZ29vZ2xlYXBpcy5jb20nIHx8IGhvc3QgPT09ICdjbG91ZGNvZGUtcGEuZ29vZ2xlYXBpcy5jb20nIHx8IGhvc3QgPT09ICdjbG91ZGFpY29tcGFuaW9uLmdvb2dsZWFwaXMuY29tJyB8fCBob3N0ID09PSAnZ2VuZXJhdGl2ZWxhbmd1YWdlLmdvb2dsZWFwaXMuY29tJyB8fCBob3N0LmluZGV4T2YoJ2Nsb3VkY29kZScpICE9PSAtMSB8fCBob3N0LmluZGV4T2YoJ2NvbXBhbmlvbicpICE9PSAtMSB8fCBob3N0LmluZGV4T2YoJ2dlbmVyYXRpdmVsYW5ndWFnZScpICE9PSAtMSB8fCB1cmwuaW5kZXhPZignY2xvdWRjb2RlJykgIT09IC0xIHx8IHVybC5pbmRleE9mKCdnZW5lcmF0aXZlbGFuZ3VhZ2UnKSAhPT0gLTEgfHwgdXJsLmluZGV4T2YoJ2Nsb3VkYWljb21wYW5pb24nKSAhPT0gLTEpIHsKICAgICAgICByZXR1cm4gJ1BST1hZIDEyNy4wLjAuMToyMDEzMDsgRElSRUNUJzsKICAgIH0KICAgIHJldHVybiAnRElSRUNUJzsKfQ=="
 )
 
 def slugify(text: str) -> str:
@@ -138,6 +196,8 @@ def load_data() -> dict:
             data["settings"].setdefault("requests_per_account", 1)
             data["settings"].setdefault("round_robin_enabled", True)
             data["settings"].setdefault("language", "vi")
+            data["settings"].setdefault("app_binary", APP_BINARY)
+            data["settings"].setdefault("ide_binary", find_ide_binary())
             profiles = data.get("profiles", [])
             for idx, p in enumerate(profiles):
                 if "order" not in p or not isinstance(p["order"], int):

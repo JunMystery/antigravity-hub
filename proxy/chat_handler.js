@@ -3,7 +3,7 @@ const { ensureValidToken, refreshGoogleAccessToken } = require("./token_manager"
 const { getAgentForAccount } = require("./agent_pool");
 
 /**
- * Kiem tra xem endpoint co phai la AI Chat / Code Generation khong
+ * Kiem tra xem endpoint co phai la AI Chat / Code Generation / Subagent khong
  */
 function isAiChatEndpoint(url) {
   if (!url) return false;
@@ -11,34 +11,37 @@ function isAiChatEndpoint(url) {
     url.includes(":generateContent") ||
     url.includes(":streamGenerateContent") ||
     url.includes(":generateChat") ||
-    url.includes(":streamGenerateChat")
+    url.includes(":streamGenerateChat") ||
+    url.includes(":predict") ||
+    url.includes(":streamPredict") ||
+    url.includes("/models/")
   );
 }
 
 /**
  * Dynamic Payload & Project ID Rewrite:
- * 1. Rewrite truong 'project' theo account.projectId (fallback 'aicode-consumers').
+ * 1. Chi chen truong 'project' neu la CloudCode PA (tranh loi 400 voi GenerativeLanguage).
  * 2. Chuan hoa metadata.ideVersion = '2.24.0' chuan Antigravity.
  * 3. Tra ve Buffer moi da duoc serialize lai.
  */
-function rewriteChatPayload(bodyBuffer, account) {
+function rewriteChatPayload(bodyBuffer, account, host = "") {
   if (!bodyBuffer || bodyBuffer.length === 0) return bodyBuffer;
   try {
     const rawStr = bodyBuffer.toString("utf8");
     const json = JSON.parse(rawStr);
     let modified = false;
 
-    // Gan dung Project ID cua tai khoan dang active
-    const targetProject = account?.projectId || "aicode-consumers";
-    if (json.project !== targetProject) {
-      json.project = targetProject;
-      modified = true;
-    }
-
-    // Chuan hoa metadata.ideVersion tuong thich Google CloudCode
-    if (json.metadata && typeof json.metadata === "object") {
-      json.metadata.ideVersion = "2.24.0";
-      modified = true;
+    const isCloudCode = !host || host.includes("cloudcode");
+    if (isCloudCode) {
+      const targetProject = account?.projectId || "aicode-consumers";
+      if (json.project !== targetProject) {
+        json.project = targetProject;
+        modified = true;
+      }
+      if (json.metadata && typeof json.metadata === "object") {
+        json.metadata.ideVersion = "2.24.0";
+        modified = true;
+      }
     }
 
     return modified ? Buffer.from(JSON.stringify(json), "utf8") : bodyBuffer;
@@ -92,8 +95,10 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
 
   if (clientRes.destroyed || clientRes.closed) return;
 
-  // 2. Dynamic Payload Rewrite theo tai khoan dang gui
-  const finalBodyBuffer = rewriteChatPayload(bodyBuffer, account);
+  // 2. Dynamic Payload Rewrite theo tai khoan dang gui va host dich
+  const finalBodyBuffer = rewriteChatPayload(bodyBuffer, account, host);
+  const isSubagent = host.includes("generativelanguage") || host.includes("companion") || (reqUrl || "").includes("/models/");
+  const tag = isSubagent ? "[SUBAGENT]" : "[CHAT]";
 
   const fwdHeaders = { ...origHeaders };
   delete fwdHeaders["host"];
@@ -166,7 +171,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
         current_req: 1,
         requests_per_account: context.requestsPerAccount,
         total_requests: context.requestCount,
-        endpoint: (reqUrl || "/").split("?")[0],
+        endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`,
         method: reqMethod
       });
 
@@ -176,6 +181,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     }
 
     // Phan hoi thanh cong hoac loi khong nam trong dien failover
+    const isPaused = Boolean(context.rotationPaused);
     context.writeLiveStatus({
       active: false,
       timestamp: Date.now(),
@@ -184,9 +190,10 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
       current_req: context.currentAccRequestsServed,
       requests_per_account: context.requestsPerAccount,
       total_requests: context.requestCount,
-      endpoint: (reqUrl || "/").split("?")[0],
+      endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`,
       method: reqMethod,
-      status: gRes.statusCode === 200 ? "success" : `http_${gRes.statusCode}`,
+      status: isPaused ? "paused" : "standby",
+      paused: isPaused,
       statusCode: gRes.statusCode
     });
 

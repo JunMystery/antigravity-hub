@@ -16,19 +16,23 @@ if ! command -v node &>/dev/null; then
     exit 1
 fi
 
-echo "[1/2] Cài đặt các thư viện Python (PyQt6, requests)..."
+echo "[1/3] Cài đặt các thư viện Python (PyQt6, requests)..."
 pip install --break-system-packages -r requirements.txt || pip install -r requirements.txt
 
 echo ""
-echo "[2/2] Cài đặt phụ thuộc npm cho Micro-Proxy..."
+echo "[2/3] Cài đặt phụ thuộc npm cho Micro-Proxy..."
 cd proxy
 npm install
 cd ..
 
-chmod +x launch.sh launcher/main.py
+chmod +x launch.sh launcher/main.py bin/antigravity-launcher 2>/dev/null || true
+
+echo ""
+echo "[3/3] Tự động tạo Shortcut trên Desktop..."
+python3 launcher/main.py --create-shortcut || true
 
 echo ""
 echo "============================================================"
 echo "  [OK] Cài đặt hoàn tất!"
-echo "  Khởi chạy ứng dụng bằng lệnh: ./launch.sh"
+echo "  Khởi chạy ứng dụng bằng Shortcut Desktop hoặc lệnh: ./launch.sh"
 echo "============================================================"

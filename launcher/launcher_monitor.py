@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt
 
 from launcher_storage import CONFIG_DIR, PROXY_PORT
 from launcher_proxy import is_proxy_running, stop_proxy, ensure_proxy_running
+from launcher_i18n import tr
 
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 CMD_FILE = os.path.join(CONFIG_DIR, "proxy_cmd.json")
@@ -39,38 +40,39 @@ def send_proxy_cmd(win, cmd: str):
 
 def build_monitor_frame(win) -> QGroupBox:
     """Tạo khung hiển thị trạng thái hoạt động trực tiếp của Micro-Proxy."""
-    box = QGroupBox("Giám sát hoạt động Micro-Proxy")
+    box = QGroupBox(tr("monitor.box_title"))
     layout = QVBoxLayout(box)
     layout.setSpacing(6)
     layout.setContentsMargins(10, 10, 10, 10)
 
     top_row = QHBoxLayout()
-    win.mon_dot = QLabel("● IDLE")
-    win.mon_dot.setStyleSheet("color: #a6adc8; font-weight: bold;")
+    win.mon_dot = QLabel("● STANDBY")
+    win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
     top_row.addWidget(win.mon_dot)
 
-    win.mon_ep = QLabel("Endpoint: Sẵn sàng")
+    win.mon_ep = QLabel(tr("monitor.endpoint_ready"))
     win.mon_ep.setStyleSheet("color: #bac2de;")
     top_row.addWidget(win.mon_ep, 1)
 
-    win.btn_proxy_next = QPushButton("⏭ Kế tiếp")
-    win.btn_proxy_next.setToolTip("Chuyển ngay sang tài khoản tiếp theo trong danh sách Round Robin")
+    win.btn_proxy_next = QPushButton(tr("monitor.btn_next"))
+    win.btn_proxy_next.setToolTip(tr("monitor.btn_next_tooltip"))
     win.btn_proxy_next.clicked.connect(win.on_manual_next_account)
     top_row.addWidget(win.btn_proxy_next)
 
-    win.btn_proxy_toggle = QPushButton("Dừng Proxy")
+    win.btn_proxy_toggle = QPushButton(tr("btn.pause_rotation"))
+    win.btn_proxy_toggle.setToolTip(tr("tooltip.pause_rotation"))
     win.btn_proxy_toggle.clicked.connect(win.on_toggle_proxy_btn)
     top_row.addWidget(win.btn_proxy_toggle)
     layout.addLayout(top_row)
 
     bot_row = QHBoxLayout()
-    win.mon_acc = QLabel("Tài khoản: --")
+    win.mon_acc = QLabel(tr("monitor.acc_label") + "--")
     bot_row.addWidget(win.mon_acc, 2)
 
-    win.mon_req = QLabel("Lượt: 0/1")
+    win.mon_req = QLabel(tr("monitor.turn_label") + "0/1")
     bot_row.addWidget(win.mon_req, 1)
 
-    win.mon_total = QLabel("Tổng request: 0")
+    win.mon_total = QLabel(tr("monitor.total_init"))
     bot_row.addWidget(win.mon_total, 1)
     layout.addLayout(bot_row)
 
@@ -79,33 +81,36 @@ def build_monitor_frame(win) -> QGroupBox:
 def update_monitor_ui(win):
     """Cập nhật dữ liệu từ live_status.json lên giao diện Monitor."""
     if not is_proxy_running():
-        win.mon_dot.setText("● OFF")
+        win.mon_dot.setText("● STOPPED")
         win.mon_dot.setStyleSheet("color: #f38ba8; font-weight: bold;")
-        win.mon_ep.setText("Proxy đang tắt (Cần khởi chạy)")
-        win.mon_acc.setText("Tài khoản: Không khả dụng")
-        win.mon_req.setText("Lượt: --")
-        win.mon_total.setText("Tổng request: --")
-        win.btn_proxy_toggle.setText("Bật Proxy")
+        win.mon_ep.setText(tr("monitor.proxy_stopped"))
+        win.mon_acc.setText(tr("monitor.acc_label") + tr("monitor.acc_unavailable"))
+        win.mon_req.setText(tr("monitor.turn_label") + "--")
+        win.mon_total.setText(tr("monitor.total_label") + "--")
+        win.btn_proxy_toggle.setText(tr("btn.start_proxy"))
+        win.btn_proxy_toggle.setToolTip(tr("btn.start_proxy"))
         win.btn_proxy_next.setEnabled(False)
         return
 
-    win.btn_proxy_toggle.setText("Dừng Proxy")
     win.btn_proxy_next.setEnabled(True)
 
     if not os.path.exists(STATUS_FILE):
-        win.mon_dot.setText("● IDLE")
-        win.mon_dot.setStyleSheet("color: #a6adc8; font-weight: bold;")
-        win.mon_ep.setText("Endpoint: Đang chờ request")
-        win.mon_acc.setText("Tài khoản: Sẵn sàng")
-        win.mon_req.setText("Lượt: 0/1")
-        win.mon_total.setText("Tổng request: 0")
+        win.mon_dot.setText("● STANDBY")
+        win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
+        win.mon_ep.setText(tr("monitor.listening_ready"))
+        win.mon_acc.setText(tr("monitor.acc_label") + "--")
+        win.mon_req.setText(tr("monitor.turn_label") + "0/1")
+        win.mon_total.setText(tr("monitor.total_init"))
+        win.btn_proxy_toggle.setText(tr("btn.pause_rotation"))
+        win.btn_proxy_toggle.setToolTip(tr("tooltip.pause_rotation"))
         return
 
     try:
         with open(STATUS_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
 
-        status = data.get("status", "idle")
+        status = data.get("status", "standby")
+        is_paused = bool(data.get("paused", False) or status == "paused")
         account_name = data.get("account_name", data.get("account_email", "Chưa có"))
         current_req = data.get("current_req", 0)
         max_req = data.get("requests_per_account", 1)
@@ -113,21 +118,38 @@ def update_monitor_ui(win):
         endpoint = data.get("endpoint", "")
         method = data.get("method", "")
 
+        # Cập nhật nút Pause / Resume
+        if is_paused:
+            win.btn_proxy_toggle.setText(tr("btn.resume_rotation"))
+            win.btn_proxy_toggle.setToolTip(tr("tooltip.resume_rotation"))
+        else:
+            win.btn_proxy_toggle.setText(tr("btn.pause_rotation"))
+            win.btn_proxy_toggle.setToolTip(tr("tooltip.pause_rotation"))
+
+        # Cập nhật đèn trạng thái
         if status == "sending":
             win.mon_dot.setText("● ACTIVE")
             win.mon_dot.setStyleSheet("color: #a6e3a1; font-weight: bold;")
-            win.mon_ep.setText(f"{method} {endpoint}" if endpoint else "Đang chuyển tiếp request...")
-        elif status == "idle":
-            win.mon_dot.setText("● IDLE")
-            win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
-            win.mon_ep.setText("Đang lắng nghe Port 20130")
+            if endpoint:
+                ep_html = endpoint.replace("[SUBAGENT]", "<span style='color:#cba6f7;font-weight:bold;'>[SUBAGENT]</span>").replace("[CHAT]", "<span style='color:#89b4fa;font-weight:bold;'>[CHAT]</span>")
+                win.mon_ep.setText(f"{method} {ep_html}")
+            else:
+                win.mon_ep.setText(tr("monitor.forwarding"))
+        elif status == "FAILOVER":
+            win.mon_dot.setText("● FAILOVER")
+            win.mon_dot.setStyleSheet("color: #fab387; font-weight: bold;")
+            win.mon_ep.setText(data.get("message", tr("monitor.forwarding")))
+        elif is_paused:
+            win.mon_dot.setText("● PAUSED")
+            win.mon_dot.setStyleSheet("color: #f9e2af; font-weight: bold;")
+            win.mon_ep.setText(tr("monitor.paused_desc"))
         else:
-            win.mon_dot.setText("● STOPPED")
-            win.mon_dot.setStyleSheet("color: #f38ba8; font-weight: bold;")
-            win.mon_ep.setText("Proxy đã dừng")
+            win.mon_dot.setText("● STANDBY")
+            win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
+            win.mon_ep.setText(tr("monitor.listening_ready"))
 
-        win.mon_acc.setText(f"Tài khoản: <b>{account_name}</b>")
-        win.mon_req.setText(f"Lượt: <b>{current_req}/{max_req}</b> req")
-        win.mon_total.setText(f"Tổng: <b>{total_req}</b> req")
+        win.mon_acc.setText(f"{tr('monitor.acc_label')}<b>{account_name}</b>")
+        win.mon_req.setText(f"{tr('monitor.turn_label')}<b>{current_req}/{max_req}</b> req")
+        win.mon_total.setText(f"{tr('monitor.total_label')}<b>{total_req}</b> req")
     except Exception:
         pass

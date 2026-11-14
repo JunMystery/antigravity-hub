@@ -24,10 +24,20 @@ def main():
     parser.add_argument("--start-proxy", action="store_true", help="Kích hoạt Micro-Proxy Round Robin")
     parser.add_argument("--stop-proxy", action="store_true", help="Dừng Micro-Proxy Round Robin")
     parser.add_argument("--refresh-quota", action="store_true", help="Truy vấn và cập nhật Quota cho toàn bộ tài khoản")
+    parser.add_argument("--create-shortcut", action="store_true", help="Tạo Desktop Shortcut cho Antigravity Launcher")
     parser.add_argument("--proxy", dest="proxy", action="store_true", default=None, help="Chạy kèm Round Robin Proxy")
     parser.add_argument("--no-proxy", dest="proxy", action="store_false", help="Chạy không Proxy (Direct)")
 
     args = parser.parse_args()
+    if args.create_shortcut:
+        from launcher_shortcut import create_desktop_shortcut
+        ok = create_desktop_shortcut()
+        if ok:
+            print("Đã tạo Desktop Shortcut thành công.")
+        else:
+            print("Tạo Desktop Shortcut thất bại.", file=sys.stderr)
+        return
+
     if args.list or args.add or args.add_google or args.delete or args.launch or args.toggle or args.requests_per_account or args.start_proxy or args.stop_proxy or args.refresh_quota:
         run_cli(args)
     else:

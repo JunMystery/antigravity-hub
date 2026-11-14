@@ -28,8 +28,39 @@ def ensure_bridge(win) -> QuotaSignalBridge:
         win.quota_bridge = bridge
     return win.quota_bridge
 
+SPINNER_FRAMES = ["◐", "◓", "◑", "◒"]
+
+def start_spinner_animation(win):
+    """Khởi động QTimer chạy hiệu ứng xoay spinner Unicode."""
+    if not hasattr(win, "spinner_timer") or win.spinner_timer is None:
+        win.spinner_timer = QTimer(win)
+        win.spinner_timer.timeout.connect(lambda: spinner_tick(win))
+    win.spinner_frame_idx = 0
+    if not win.spinner_timer.isActive():
+        win.spinner_timer.start(80)
+
+def stop_spinner_animation(win):
+    """Dừng QTimer hiệu ứng xoay spinner."""
+    if hasattr(win, "spinner_timer") and win.spinner_timer and win.spinner_timer.isActive():
+        win.spinner_timer.stop()
+
+def spinner_tick(win):
+    """Mỗi tick chuyển frame spinner tiếp theo cho nút làm mới và các hàng đang quét."""
+    win.spinner_frame_idx = (getattr(win, "spinner_frame_idx", 0) + 1) % len(SPINNER_FRAMES)
+    char = SPINNER_FRAMES[win.spinner_frame_idx]
+
+    if getattr(win, "is_refreshing_quota", False) and hasattr(win, "btn_refresh_all"):
+        win.btn_refresh_all.setText(char)
+
+    from launcher_treeview import update_refreshing_spinners
+    update_refreshing_spinners(win, char)
+
 def handle_all_done(win, results, now):
     """Xử lý cập nhật toàn bộ Quota trên Main GUI Thread."""
+    stop_spinner_animation(win)
+    if hasattr(win, "refreshing_profile_ids"):
+        win.refreshing_profile_ids.clear()
+
     for pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid in results:
         win._update_row_quota(pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
         for p in win.data.get("profiles", []):
@@ -48,6 +79,11 @@ def handle_all_done(win, results, now):
 
 def handle_single_done(win, pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid):
     """Xử lý cập nhật riêng lẻ Quota của một tài khoản trên Main GUI Thread."""
+    if hasattr(win, "refreshing_profile_ids"):
+        win.refreshing_profile_ids.discard(pid)
+        if not win.refreshing_profile_ids and not getattr(win, "is_refreshing_quota", False):
+            stop_spinner_animation(win)
+
     win._update_row_quota(pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
     prof_email = ""
     for p in win.data.get("profiles", []):
@@ -63,6 +99,9 @@ def handle_single_done(win, pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_
 
 def handle_error(win):
     """Xử lý khôi phục giao diện khi quá trình quét ngầm gặp ngoại lệ."""
+    stop_spinner_animation(win)
+    if hasattr(win, "refreshing_profile_ids"):
+        win.refreshing_profile_ids.clear()
     win.is_refreshing_quota = False
     if hasattr(win, "btn_refresh_all"):
         win.btn_refresh_all.setEnabled(True)
@@ -76,6 +115,7 @@ def get_quota_btn_label(loading: bool = False) -> str:
 
 def start_refresh_cooldown(win, seconds=MANUAL_COOLDOWN):
     """Bắt đầu đếm ngược cooldown chống spam Google API."""
+    stop_spinner_animation(win)
     win.cooldown_remaining = seconds
     if hasattr(win, "btn_refresh_all"):
         win.btn_refresh_all.setEnabled(False)
@@ -96,6 +136,9 @@ def cooldown_tick(win):
 
 def refresh_single_row_quota(win, prof_id):
     """Quét Quota cho riêng một tài khoản được chọn."""
+    if prof_id in getattr(win, "refreshing_profile_ids", set()):
+        return
+
     prof = next((p for p in win.data.get("profiles", []) if p.get("id") == prof_id), None)
     if not prof:
         return
@@ -103,7 +146,8 @@ def refresh_single_row_quota(win, prof_id):
     bridge = ensure_bridge(win)
 
     from launcher_treeview import mark_single_row_refreshing
-    mark_single_row_refreshing(win, prof_id)
+    mark_single_row_refreshing(win, prof_id, SPINNER_FRAMES[0])
+    start_spinner_animation(win)
 
     def worker():
         try:
@@ -134,10 +178,11 @@ def refresh_all_quota(win, widget=None):
 
     if hasattr(win, "btn_refresh_all"):
         win.btn_refresh_all.setEnabled(False)
-        win.btn_refresh_all.setText("Đang quét...")
+        win.btn_refresh_all.setText(SPINNER_FRAMES[0])
 
     from launcher_treeview import mark_all_rows_refreshing
-    mark_all_rows_refreshing(win)
+    mark_all_rows_refreshing(win, SPINNER_FRAMES[0])
+    start_spinner_animation(win)
 
     if hasattr(win, "lbl_info"):
         win.lbl_info.setText(f"<b><span style='color:#89b4fa;'>Đang làm mới Quota cho {len(profiles)} tài khoản...</span></b>")

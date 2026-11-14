@@ -4,6 +4,7 @@ Cửa sổ chính của Antigravity Profile Launcher (PyQt6).
 Hỗ trợ đầy đủ Windows và Linux với 1 codebase thống nhất.
 """
 
+import os
 import sys
 import signal
 from PyQt6.QtWidgets import (
@@ -13,7 +14,8 @@ from PyQt6.QtCore import QTimer, Qt
 from PyQt6.QtGui import QIcon
 
 from launcher_storage import (
-    load_data, save_data, APP_ICON, delete_account_completely
+    load_data, save_data, APP_ICON, delete_account_completely,
+    get_app_binary, get_ide_binary
 )
 from launcher_i18n import tr, set_language
 from launcher_layout import build_launcher_layout, retranslate_layout, apply_launcher_style
@@ -26,8 +28,12 @@ from launcher_proxy import (
     is_proxy_running, stop_proxy, ensure_proxy_running,
     launch_profile, stop_all_launched_apps
 )
-from launcher_quota_runner import refresh_all_quota, auto_refresh_quota
+from launcher_quota_runner import (
+    refresh_all_quota, auto_refresh_quota, stop_spinner_animation
+)
 from launcher_oauth import start_google_oauth_flow
+from launcher_shortcut import create_desktop_shortcut
+from launcher_settings_dialog import LauncherSettingsDialog
 
 class LauncherWindow(QMainWindow):
     """Cửa sổ điều khiển chính Antigravity Launcher."""
@@ -58,6 +64,21 @@ class LauncherWindow(QMainWindow):
 
         # Quét Quota ngầm sau khi mở ứng dụng 2 giây
         QTimer.singleShot(2000, self.on_refresh_all_quota)
+
+        # Tự động kích hoạt Micro-Proxy ở chế độ STANDBY sau khi mở Launcher
+        QTimer.singleShot(300, ensure_proxy_running)
+
+        # Tự động tạo desktop shortcut lần đầu khởi chạy (nếu chưa tạo)
+        if not self.data.get("settings", {}).get("shortcut_created", False):
+            create_desktop_shortcut()
+            self.data.setdefault("settings", {})["shortcut_created"] = True
+            save_data(self.data)
+
+        # Kiểm tra tự động phát hiện đường dẫn: nếu cả 2 đều không tìm thấy thì mở Cài đặt
+        app_bin = get_app_binary(self.data)
+        ide_bin = get_ide_binary(self.data)
+        if (not app_bin or not os.path.exists(app_bin)) and (not ide_bin or not os.path.exists(ide_bin)):
+            QTimer.singleShot(600, self.on_settings_clicked)
 
     def on_language_changed(self, idx):
         """Xử lý sự kiện người dùng đổi ngôn ngữ từ ComboBox."""
@@ -124,9 +145,9 @@ class LauncherWindow(QMainWindow):
         self.update_live_monitor()
 
     def on_toggle_proxy_btn(self):
-        """Bật hoặc dừng tiến trình Micro-Proxy."""
+        """Bật hoặc tạm dừng/tiếp tục xoay vòng Micro-Proxy."""
         if is_proxy_running():
-            stop_proxy()
+            send_proxy_cmd(self, "toggle_pause")
         else:
             ensure_proxy_running()
         self.update_live_monitor()
@@ -145,59 +166,96 @@ class LauncherWindow(QMainWindow):
         if not sel:
             return
 
-        label = sel.get("name") or sel.get("email") or "Account"
+        label = sel.get("email") or sel.get("name") or "Account"
         ans = QMessageBox.question(
             self,
-            f"Xác nhận xóa tài khoản '{label}'?",
-            f"Cảnh báo: Hành động này sẽ xóa hoàn toàn profile, thu hồi token và dữ liệu đĩa.\n\nBạn có chắc chắn muốn xóa không?",
+            tr("dialog.delete_title").format(label=label),
+            tr("dialog.delete_warning"),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
         if ans == QMessageBox.StandardButton.Yes:
             self.data = delete_account_completely(sel)
             self._refresh_list()
-            self.lbl_info.setText(f"<b><span style='color:#f38ba8;'>Đã xóa tài khoản {label}.</span></b>")
+            self.lbl_info.setText(tr("dialog.deleted_msg").format(label=label))
 
-    def on_row_double_clicked(self, item):
-        """Mở nhanh Antigravity khi nhấp đúp vào một dòng tài khoản."""
-        self.on_launch_clicked()
+    def activate_window(self):
+        """Kích hoạt và đưa cửa sổ launcher lên tiền cảnh (Single-Instance)."""
+        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
+        self.show()
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        handle = self.windowHandle()
+        if handle and hasattr(handle, "requestActivate"):
+            handle.requestActivate()
+
+    def on_settings_clicked(self):
+        """Mở hộp thoại Cài đặt (Settings Dialog)."""
+        dlg = LauncherSettingsDialog(self)
+        dlg.exec()
+
+    def on_launch_app_clicked(self):
+        """Khởi chạy Antigravity App (2.0) với tài khoản đang chọn."""
+        self._launch_target("app", self.btn_launch_app, "🚀 " + tr("btn.launch_app"))
+
+    def on_launch_ide_clicked(self):
+        """Khởi chạy Antigravity IDE với tài khoản đang chọn."""
+        self._launch_target("ide", self.btn_launch_ide, "💻 " + tr("btn.launch_ide"))
 
     def on_launch_clicked(self):
-        """Khởi chạy Antigravity IDE với tài khoản đang chọn."""
+        """Hàm tương thích ngược với nút launch cũ."""
+        self.on_launch_app_clicked()
+
+    def _launch_target(self, target: str, button, default_text: str):
+        """Khởi chạy App hoặc IDE kèm trạng thái nút bấm."""
         sel = self._get_selected()
         if not sel:
-            QMessageBox.warning(self, "Chưa chọn tài khoản", "Vui lòng chọn một tài khoản để khởi chạy.")
+            QMessageBox.warning(self, tr("msg.no_account_title"), tr("msg.no_account_desc"))
             return
 
         data_dir = sel.get("data_dir")
         if not data_dir:
             return
 
-        self.btn_launch.setEnabled(False)
-        self.btn_launch.setText("Đang khởi chạy...")
+        button.setEnabled(False)
+        button.setText(tr("msg.launching"))
 
         def restore_btn():
-            self.btn_launch.setEnabled(True)
-            self.btn_launch.setText(tr("btn.launch"))
+            button.setEnabled(True)
+            button.setText(default_text)
 
-        ok = launch_profile(data_dir, use_proxy=True)
+        ok = launch_profile(data_dir, target=target, use_proxy=True)
         if ok:
             QTimer.singleShot(1500, restore_btn)
         else:
             restore_btn()
-            QMessageBox.critical(self, "Lỗi khởi chạy", "Không thể khởi chạy Antigravity IDE. Kiểm tra log hệ thống.")
+            label = "Antigravity App (2.0)" if target == "app" else "Antigravity IDE"
+            QMessageBox.critical(self, tr("msg.launch_error_title"), tr("msg.launch_error_desc").format(target=label))
 
     def closeEvent(self, event):
         """Xử lý sự kiện đóng cửa sổ."""
         self.monitor_timer.stop()
         self.auto_quota_timer.stop()
+        stop_spinner_animation(self)
         event.accept()
 
 def run_gui():
     """Hàm khởi động ứng dụng giao diện chính."""
+    from launcher_single_instance import check_single_instance, setup_single_instance_listener
+
     app = QApplication(sys.argv)
+    app.setApplicationName("antigravity-launcher")
+    app.setDesktopFileName("antigravity-launcher")
+    is_primary, server = check_single_instance()
+    if not is_primary:
+        sys.exit(0)
+
     apply_launcher_style(app)
+    app.setWindowIcon(QIcon(APP_ICON))
     win = LauncherWindow()
+    if server:
+        setup_single_instance_listener(server, win.activate_window)
     win.show()
 
     def handle_signal(sig, frame):
@@ -208,7 +266,12 @@ def run_gui():
     signal.signal(signal.SIGINT, handle_signal)
     signal.signal(signal.SIGTERM, handle_signal)
 
-    sys.exit(app.exec())
+    try:
+        ret = app.exec()
+    finally:
+        stop_all_launched_apps()
+        stop_proxy()
+    sys.exit(ret)
 
 if __name__ == "__main__":
     run_gui()
