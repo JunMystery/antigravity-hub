@@ -54,8 +54,8 @@ def build_launcher_layout(win):
     win.combo_lang.currentIndexChanged.connect(win.on_language_changed)
     header.addWidget(win.combo_lang, 0, Qt.AlignmentFlag.AlignVCenter)
 
-    # Settings icon button
-    win.btn_settings = QPushButton("⚙")
+    # Settings button
+    win.btn_settings = QPushButton()
     win.btn_settings.setObjectName("btn_settings")
     win.btn_settings.setFixedSize(30, 28)
     win.btn_settings.setToolTip(tr("settings.title"))
@@ -129,14 +129,14 @@ def build_launcher_layout(win):
     launch_box = QHBoxLayout()
     launch_box.setSpacing(10)
 
-    win.btn_launch_app = QPushButton("🚀 " + tr("btn.launch_app"))
+    win.btn_launch_app = QPushButton(tr("btn.launch_app"))
     win.btn_launch_app.setObjectName("btn_launch_app")
     win.btn_launch_app.setFixedHeight(42)
     win.btn_launch_app.clicked.connect(win.on_launch_app_clicked)
     launch_box.addWidget(win.btn_launch_app, 1)
     win.btn_launch = win.btn_launch_app  # Legacy compatibility alias
 
-    win.btn_launch_ide = QPushButton("💻 " + tr("btn.launch_ide"))
+    win.btn_launch_ide = QPushButton(tr("btn.launch_ide"))
     win.btn_launch_ide.setObjectName("btn_launch_ide")
     win.btn_launch_ide.setFixedHeight(42)
     win.btn_launch_ide.clicked.connect(win.on_launch_ide_clicked)
@@ -163,8 +163,8 @@ def retranslate_layout(win):
     win.rr_info.setText(tr("opt.mode"))
     win.spin_lbl.setText(tr("opt.req_per_acc"))
     if hasattr(win, "btn_launch_app"):
-        win.btn_launch_app.setText("🚀 " + tr("btn.launch_app"))
+        win.btn_launch_app.setText(tr("btn.launch_app"))
     if hasattr(win, "btn_launch_ide"):
-        win.btn_launch_ide.setText("💻 " + tr("btn.launch_ide"))
+        win.btn_launch_ide.setText(tr("btn.launch_ide"))
     if hasattr(win, "update_live_monitor"):
         win.update_live_monitor()

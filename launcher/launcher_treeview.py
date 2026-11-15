@@ -49,6 +49,7 @@ def setup_treeview(win):
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(42)
     table.setShowGrid(True)
 
     win.table_container.addWidget(table, 1)
@@ -161,7 +162,7 @@ def populate_treeview(win, select_id=None):
 
             # 5: Single Refresh Button
             btn_row_ref = QPushButton("⟳")
-            btn_row_ref.setFixedSize(28, 24)
+            btn_row_ref.setFixedSize(28, 26)
             btn_row_ref.setStyleSheet("padding: 0px; font-size: 13px; font-weight: bold;")
             btn_row_ref.setToolTip(tr("tooltip.refresh_all"))
             btn_row_ref.clicked.connect(lambda _, prof_id=pid: refresh_single_row_quota(win, prof_id))

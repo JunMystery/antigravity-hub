@@ -1,30 +1,31 @@
 /**
- * Quan ly tinh ket dinh phien (Session Affinity) cho AI Chat va Subagents:
- * 1. Phat hien conversationId / sessionId tu Headers va Body Buffer.
- * 2. Sticky Session Mapping: Khoa co dinh tai khoan va Project ID theo Conversation.
- * 3. In-Flight & Burst Concurrency: Giu nguyen tai khoan khi subagents chay song song.
+ * Dual-Track Session Affinity & Subagent Round Robin Manager:
+ * Track 1: Main Chat Session Affinity & Context Pinning.
+ * Track 2: Subagent Round Robin Allocation (Moi Subagent moi bat buoc nhan 1 account moi).
  */
 
-const SESSION_TTL_MS = 15 * 60 * 1000; // 15 phut
-const BURST_WINDOW_MS = 4000; // 4 giay burst window cho subagent concurrent calls
+const SUBAGENT_IDLE_TIMEOUT_MS = 60 * 1000; // 60s idle timeout sau khi subagent xong viec
+const MAIN_SESSION_TTL_MS = 30 * 60 * 1000; // 30m TTL cho main session
 
 class SessionAffinityManager {
   constructor() {
-    this.sessionMap = new Map(); // sessionId -> { email: string, lastUsed: number }
+    this.mainSessionId = null;
+    this.mainSessionAccount = null;
+    this.mainSessionLastActive = 0;
+    this.subagentMap = new Map(); // sessionId -> { email: string, lastUsed: number, requestCount: number }
+    this.subagentIndex = 0;
+    this.subagentTotalRequests = 0;
     this.inFlightCount = 0;
-    this.lastActiveAccount = null;
-    this.lastActiveTime = 0;
   }
 
   extractSessionId(headers = {}, bodyBuffer = null) {
-    // 1. Kiem tra HTTP Headers
     const h = headers || {};
+    // 1. Uu tien conversation/session ID co dinh
     const headerKey = h["conversation-id"] || h["x-conversation-id"] ||
-                      h["session-id"] || h["x-session-id"] ||
-                      h["x-client-request-id"] || h["client-request-id"];
+                      h["session-id"] || h["x-session-id"];
     if (headerKey) return String(headerKey);
 
-    // 2. Kiem tra JSON Payload
+    // 2. Kiem tra JSON Payload (Antigravity luu conversationId trong metadata)
     if (bodyBuffer && bodyBuffer.length > 0) {
       try {
         const json = JSON.parse(bodyBuffer.toString("utf8"));
@@ -36,58 +37,125 @@ class SessionAffinityManager {
         }
       } catch (_) {}
     }
+
+    // 3. Fallback cuoi cung neu khong co gi khac
+    const fallbackId = h["x-client-request-id"] || h["client-request-id"];
+    if (fallbackId) return String(fallbackId);
+
     return null;
   }
 
-  getAffinityAccount(sessionId, accounts = []) {
-    this.cleanupExpired();
-    if (!sessionId) return null;
-
-    const entry = this.sessionMap.get(sessionId);
-    if (!entry) return null;
-
-    entry.lastUsed = Date.now();
-    const found = accounts.find((a) => (a.email || a.name || "").toLowerCase() === entry.email.toLowerCase());
-    return found || null;
+  isMainSessionActive() {
+    return Boolean(
+      this.mainSessionId &&
+      this.mainSessionLastActive &&
+      (Date.now() - this.mainSessionLastActive < MAIN_SESSION_TTL_MS)
+    );
   }
 
-  setAffinity(sessionId, account) {
-    if (!sessionId || !account) return;
-    const email = (account.email || account.name || "").toLowerCase();
-    this.sessionMap.set(sessionId, { email, lastUsed: Date.now() });
-  }
-
-  clearAffinity(sessionId) {
-    if (sessionId) this.sessionMap.delete(sessionId);
-  }
-
-  getBurstAccount(accounts = []) {
-    const now = Date.now();
-    const isBurst = this.inFlightCount > 0 || (now - this.lastActiveTime < BURST_WINDOW_MS);
-    if (isBurst && this.lastActiveAccount) {
-      const email = (this.lastActiveAccount.email || this.lastActiveAccount.name || "").toLowerCase();
-      const found = accounts.find((a) => (a.email || a.name || "").toLowerCase() === email);
-      if (found) return found;
+  isSubagent(reqUrl, host = "", headers = {}, bodyBuffer = null, sessionId = null) {
+    const h = headers || {};
+    if (h["x-subagent-id"] || h["subagent-id"] || h["x-antigravity-subagent"]) {
+      return true;
     }
-    return null;
+    if (host.includes("companion") || (h["user-agent"] && h["user-agent"].includes("antigravity-subagent"))) {
+      return true;
+    }
+    if (sessionId) {
+      if (this.subagentMap.has(sessionId)) return true;
+      if (this.mainSessionId && sessionId === this.mainSessionId) {
+        this.mainSessionLastActive = Date.now();
+        return false;
+      }
+      if (this.mainSessionId && sessionId !== this.mainSessionId) {
+        if (this.mainSessionLastActive && (Date.now() - this.mainSessionLastActive < MAIN_SESSION_TTL_MS)) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
-  startRequest(account) {
-    this.inFlightCount++;
-    this.lastActiveAccount = account;
-    this.lastActiveTime = Date.now();
+  setMainSession(sessionId, account) {
+    if (sessionId) {
+      this.mainSessionId = sessionId;
+      this.mainSessionLastActive = Date.now();
+    }
+    if (account) this.mainSessionAccount = account;
   }
 
-  endRequest() {
-    this.inFlightCount = Math.max(0, this.inFlightCount - 1);
-    this.lastActiveTime = Date.now();
-  }
-
-  cleanupExpired() {
+  allocateSubagentAccount(sessionId, accounts = []) {
+    this.cleanupExpiredSubagents();
+    if (!accounts || accounts.length === 0) return null;
     const now = Date.now();
-    for (const [id, entry] of this.sessionMap.entries()) {
-      if (now - entry.lastUsed > SESSION_TTL_MS) {
-        this.sessionMap.delete(id);
+    const total = accounts.length;
+
+    // 1. Subagent hien tai con dang chay trong 1 task (< 60s idle) -> Giu nguyen Prompt Cache
+    if (sessionId && this.subagentMap.has(sessionId)) {
+      const entry = this.subagentMap.get(sessionId);
+      if (now - entry.lastUsed <= SUBAGENT_IDLE_TIMEOUT_MS) {
+        entry.lastUsed = now;
+        entry.requestCount++;
+        this.subagentTotalRequests++;
+        const boundAcc = accounts.find((a) => (a.email || a.name || "").toLowerCase() === entry.email.toLowerCase());
+        if (boundAcc) {
+          return { account: boundAcc, isSticky: true, requestNumber: this.subagentTotalRequests, isNewSubagent: false };
+        }
+      }
+    }
+
+    // 2. Subagent MOI (hoac session idle > 60s) -> BAT BUOC Round Robin sang tai khoan tiep theo!
+    const nextIdx = this.subagentMap.size === 0 ? this.subagentIndex : (this.subagentIndex + 1) % total;
+    this.subagentIndex = nextIdx;
+
+    let selectedAcc = accounts[this.subagentIndex];
+    for (let i = 0; i < total; i++) {
+      const candidate = accounts[(this.subagentIndex + i) % total];
+      if (!candidate.unhealthyUntil || candidate.unhealthyUntil < now) {
+        selectedAcc = candidate;
+        this.subagentIndex = (this.subagentIndex + i) % total;
+        break;
+      }
+    }
+
+    this.subagentTotalRequests++;
+    const email = (selectedAcc.email || selectedAcc.name || "").toLowerCase();
+    if (sessionId) {
+      this.subagentMap.set(sessionId, { email, lastUsed: now, requestCount: 1 });
+    }
+
+    return {
+      account: selectedAcc,
+      isSticky: false,
+      requestNumber: this.subagentTotalRequests,
+      isNewSubagent: true
+    };
+  }
+
+  failoverSubagent(sessionId, accounts = []) {
+    if (!accounts || accounts.length === 0) return null;
+    const now = Date.now();
+    const total = accounts.length;
+    this.subagentIndex = (this.subagentIndex + 1) % total;
+    const newAcc = accounts[this.subagentIndex];
+    if (sessionId && newAcc) {
+      this.subagentMap.set(sessionId, {
+        email: (newAcc.email || newAcc.name || "").toLowerCase(),
+        lastUsed: now,
+        requestCount: 1
+      });
+    }
+    return newAcc;
+  }
+
+  startRequest() { this.inFlightCount++; }
+  endRequest() { this.inFlightCount = Math.max(0, this.inFlightCount - 1); }
+
+  cleanupExpiredSubagents() {
+    const now = Date.now();
+    for (const [id, entry] of this.subagentMap.entries()) {
+      if (now - entry.lastUsed > SUBAGENT_IDLE_TIMEOUT_MS) {
+        this.subagentMap.delete(id);
       }
     }
   }

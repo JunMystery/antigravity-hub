@@ -49,7 +49,8 @@ def load_data() -> dict:
                 "use_proxy": True,
                 "round_robin_enabled": True,
                 "requests_per_account": 1,
-                "language": "vi"
+                "language": "vi",
+                "log_retention_days": 30
             },
             "profiles": []
         }
@@ -64,6 +65,7 @@ def load_data() -> dict:
             data["settings"].setdefault("language", "vi")
             data["settings"].setdefault("app_binary", APP_BINARY)
             data["settings"].setdefault("ide_binary", find_ide_binary())
+            data["settings"].setdefault("log_retention_days", 30)
             profiles = data.get("profiles", [])
             for idx, p in enumerate(profiles):
                 if "order" not in p or not isinstance(p["order"], int):

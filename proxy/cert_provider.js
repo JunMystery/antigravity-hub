@@ -77,20 +77,29 @@ function createLeafCertificate(certsDir) {
   cert.setExtensions([
     { name: "basicConstraints", cA: false },
     {
+      name: "extKeyUsage",
+      serverAuth: true
+    },
+    {
       name: "subjectAltName",
       altNames: [
         { type: 2, value: "*.googleapis.com" },
         { type: 2, value: "daily-cloudcode-pa.googleapis.com" },
-        { type: 2, value: "cloudcode-pa.googleapis.com" }
+        { type: 2, value: "cloudcode-pa.googleapis.com" },
+        { type: 2, value: "generativelanguage.googleapis.com" },
+        { type: 2, value: "localhost" },
+        { type: 7, ip: "127.0.0.1" }
       ]
     }
   ]);
 
   cert.sign(caKey, forge.md.sha256.create());
 
+  const leafCertPem = forge.pki.certificateToPem(cert);
   return {
     key: forge.pki.privateKeyToPem(keys.privateKey),
-    cert: forge.pki.certificateToPem(cert)
+    cert: `${leafCertPem}\n${caCertPem}`,
+    ca: caCertPem
   };
 }
 

@@ -3,72 +3,13 @@ const { ensureValidToken, refreshGoogleAccessToken } = require("./token_manager"
 const { getAgentForAccount } = require("./agent_pool");
 const { decryptToken } = require("./crypto_helper");
 const { sessionAffinity } = require("./session_affinity");
-
-/**
- * Kiem tra xem endpoint co phai la AI Chat / Code Generation / Subagent khong
- */
-function isAiChatEndpoint(url) {
-  if (!url) return false;
-  return (
-    url.includes(":generateContent") ||
-    url.includes(":streamGenerateContent") ||
-    url.includes(":generateChat") ||
-    url.includes(":streamGenerateChat") ||
-    url.includes(":predict") ||
-    url.includes(":streamPredict") ||
-    url.includes("/models/")
-  );
-}
-
-/**
- * Dynamic Payload & Project ID Rewrite:
- * 1. Chi chen truong 'project' neu la CloudCode PA (tranh loi 400 voi GenerativeLanguage).
- * 2. Chuan hoa metadata.ideVersion = '2.24.0' chuan Antigravity.
- * 3. Tra ve Buffer moi da duoc serialize lai.
- */
-function rewriteChatPayload(bodyBuffer, account, host = "") {
-  if (!bodyBuffer || bodyBuffer.length === 0) return bodyBuffer;
-  try {
-    const rawStr = bodyBuffer.toString("utf8");
-    const json = JSON.parse(rawStr);
-    let modified = false;
-
-    const isCloudCode = !host || host.includes("cloudcode");
-    if (isCloudCode) {
-      const targetProject = account?.projectId || "aicode-consumers";
-      if (json.project !== targetProject) {
-        json.project = targetProject;
-        modified = true;
-      }
-      if (json.metadata && typeof json.metadata === "object") {
-        json.metadata.ideVersion = "2.24.0";
-        modified = true;
-      }
-    }
-
-    return modified ? Buffer.from(JSON.stringify(json), "utf8") : bodyBuffer;
-  } catch (_) {
-    return bodyBuffer;
-  }
-}
-
-/**
- * Doc toan bo noi dung response loi tu Google (phuc vu diagnostic logging)
- */
-function readErrorBody(res) {
-  return new Promise((resolve) => {
-    const chunks = [];
-    res.on("data", (chunk) => chunks.push(chunk));
-    res.on("end", () => {
-      try {
-        resolve(Buffer.concat(chunks).toString("utf8"));
-      } catch {
-        resolve("");
-      }
-    });
-    res.on("error", () => resolve(""));
-  });
-}
+const { destroyStream, attachClientCloseHandler } = require("./socket_cleanup");
+const {
+  isAiChatEndpoint,
+  rewriteChatPayload,
+  readErrorBody,
+  create503AuthShieldPayload
+} = require("./chat_payload_helper");
 
 // Gui Chat Request voi Dedicated Agent, Dynamic Rewrite, Auto-Failover va Auth Shield
 async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt = 1) {
@@ -81,204 +22,200 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     console.log(`[CLIENT-CLOSED] Ket noi IDE da dong truoc khi gui request cho [${accName}]`);
     return;
   }
-
-  // 1. Dam bao Token con han su dung truoc khi gui di
-  if (account) {
-    await ensureValidToken(account, context.config);
-  }
-
+  if (account) await ensureValidToken(account, context.config);
   if (clientRes.destroyed || clientRes.closed) return;
 
-  // 2. Dynamic Payload Rewrite theo tai khoan dang gui va host dich
   const finalBodyBuffer = rewriteChatPayload(bodyBuffer, account, host);
-  const isSubagent = host.includes("generativelanguage") || host.includes("companion") || (reqUrl || "").includes("/models/");
-  const tag = isSubagent ? "[SUBAGENT]" : "[CHAT]";
+  const isSubagent = context.isSubagent !== undefined
+    ? context.isSubagent
+    : sessionAffinity.isSubagent(reqUrl, host, origHeaders, bodyBuffer, context.sessionId);
+  const tag = isSubagent ? "[SUBAGENT]" : "[MAIN]";
 
-  const fwdHeaders = { ...origHeaders };
+  const fwdHeaders = { ...origHeaders, host, "user-agent": "antigravity/2.24.0 linux/x64" };
   delete fwdHeaders["host"];
   fwdHeaders["host"] = host;
-
-  // Chuan hoa User-Agent tuong thich Antigravity
-  fwdHeaders["user-agent"] = "antigravity/2.24.0 linux/x64";
 
   if (account && account.accessToken) {
     const plainToken = decryptToken(account.accessToken);
     account.accessToken = plainToken;
     fwdHeaders["authorization"] = `Bearer ${plainToken}`;
   }
-
+  // RFC 7230 §3.3.2 / RFC 9112 §6.1: Delete Transfer-Encoding when sending Content-Length
+  delete fwdHeaders["transfer-encoding"];
+  delete fwdHeaders["Transfer-Encoding"];
   if (finalBodyBuffer && finalBodyBuffer.length > 0) {
     fwdHeaders["content-length"] = finalBodyBuffer.length;
   }
 
-  // Su dung Agent doc lap cho tai khoan nay
-  const accountAgent = getAgentForAccount(account);
+  const TTFB_TIMEOUT_MS = 120000;      // 120s Time-To-First-Byte cho Extended Thinking
+  const INACTIVITY_TIMEOUT_MS = 45000; // 45s sliding window giua cac data chunks
 
   const outgoingOptions = {
-    hostname: host,
-    port: 443,
-    path: reqUrl,
-    method: reqMethod,
-    headers: fwdHeaders,
-    agent: accountAgent,
-    timeout: 35000
+    hostname: host, port: 443, path: reqUrl, method: reqMethod,
+    headers: fwdHeaders, agent: getAgentForAccount(account)
   };
 
-  let gResFinished = false;
+  let activeGRes = null;
+  let isAborted = false;
+  let sessionEnded = false;
+  let timeoutTimer = null;
+
+  function clearAllTimeout() {
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer);
+      timeoutTimer = null;
+    }
+  }
+
+  function resetTimeout(ms) {
+    clearAllTimeout();
+    timeoutTimer = setTimeout(() => {
+      console.warn(`[UPSTREAM-TIMEOUT] [WARN] Timeout (${ms}ms) tren ket noi Google (${host}) cho [${accName}]`);
+      clearAllTimeout();
+      safeEndSession();
+      if (activeGRes) destroyStream(activeGRes);
+      gReq.destroy(new Error("Upstream connection timeout"));
+    }, ms);
+  }
+
+  function safeEndSession() {
+    clearAllTimeout();
+    if (!sessionEnded) {
+      sessionEnded = true;
+      sessionAffinity.endRequest();
+    }
+  }
+
   sessionAffinity.startRequest(account);
+  resetTimeout(TTFB_TIMEOUT_MS);
 
   const gReq = https.request(outgoingOptions, async (gRes) => {
+    if (isAborted || clientRes.destroyed || clientRes.closed) {
+      destroyStream(gRes);
+      safeEndSession();
+      return;
+    }
+    activeGRes = gRes;
+    resetTimeout(INACTIVITY_TIMEOUT_MS);
+
     // XU LY 401 UNAUTHORIZED: Ep cap moi token ngay lap tuc
     if (gRes.statusCode === 401 && attempt <= totalAccs * 2) {
+      clearAllTimeout();
       const errText = await readErrorBody(gRes);
-      console.warn(`[AUTO-FAILOVER-401] [WARN] Tai khoan ${accName} bi HTTP 401: ${errText.slice(0, 150)}. Dang cap moi Token...`);
+      console.warn(`[AUTO-FAILOVER-401] [WARN] Tai khoan ${accName} bi HTTP 401: ${errText.slice(0, 150)}. Cap moi Token...`);
 
       refreshGoogleAccessToken(account, context.config).then((refreshed) => {
-        sessionAffinity.endRequest();
-        if (clientRes.destroyed || clientRes.closed) return;
+        safeEndSession();
+        if (isAborted || clientRes.destroyed || clientRes.closed) return;
         if (refreshed) {
-          console.log(`[AUTO-FAILOVER-401] [OK] Cap moi token thanh cong cho ${accName}. Thu lai request...`);
+          console.log(`[AUTO-FAILOVER-401] [OK] Cap moi token thanh cong cho ${accName}. Thu lai...`);
           executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
         } else {
-          console.warn(`[AUTO-FAILOVER-401] [FAIL] Refresh token that bai cho ${accName}. Chuyen sang tai khoan ke tiep...`);
-          context.nextAccount(context.sessionId, true);
-          const nextAcc = context.getCurrentAccount();
+          console.warn(`[AUTO-FAILOVER-401] [FAIL] Refresh that bai cho ${accName}. Chuyen tiep...`);
+          const nextAcc = context.nextAccount(context.sessionId, true, isSubagent);
           executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
         }
       });
       return;
     }
 
-    // XU LY 429 (QUOTA) HOAC 403 (FORBIDDEN) HOAC 404 (PROJECT NOT FOUND): Auto-Failover
+    // XU LY 429/403/404: Auto-Failover sang account tiep theo
     if ((gRes.statusCode === 429 || gRes.statusCode === 403 || gRes.statusCode === 404) && attempt <= totalAccs) {
-      sessionAffinity.endRequest();
+      clearAllTimeout();
+      safeEndSession();
       const errText = await readErrorBody(gRes);
-      console.warn(`[AUTO-FAILOVER] [WARN] Tai khoan ${accName} bi HTTP ${gRes.statusCode}: ${errText.slice(0, 200)}! Dang doi tai khoan tiep theo...`);
+      console.warn(`[AUTO-FAILOVER] [WARN] Tai khoan ${accName} bi HTTP ${gRes.statusCode}: ${errText.slice(0, 200)}!`);
 
-      context.nextAccount(context.sessionId, true);
-      const nextAcc = context.getCurrentAccount();
-
+      const nextAcc = context.nextAccount(context.sessionId, true, isSubagent);
       context.writeLiveStatus({
-        active: true,
-        status: "FAILOVER",
-        error_account: accName,
-        error_code: gRes.statusCode,
-        message: `[WARN] ${accName} bi loi ${gRes.statusCode} -> Dang tu dong doi sang ${nextAcc?.email}...`,
-        timestamp: Date.now(),
-        account_email: nextAcc?.email || accName,
-        account_name: nextAcc?.name || accName,
-        current_req: 1,
-        requests_per_account: context.requestsPerAccount,
-        total_requests: context.requestCount,
-        endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`,
-        method: reqMethod
+        active: true, status: "FAILOVER", error_account: accName, error_code: gRes.statusCode,
+        message: `[WARN] ${accName} bi loi ${gRes.statusCode} -> Dang doi sang ${nextAcc?.email}...`,
+        timestamp: Date.now(), account_email: nextAcc?.email || accName, account_name: nextAcc?.name || accName,
+        current_req: 1, requests_per_account: context.requestsPerAccount, total_requests: context.requestCount,
+        endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`, method: reqMethod
       });
 
-      if (clientRes.destroyed || clientRes.closed) return;
+      if (isAborted || clientRes.destroyed || clientRes.closed) return;
       executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
       return;
     }
 
-    // AUTH SHIELD: Tuyet doi chan 401 khong cho lot ve IDE lam logout session
+    // AUTH SHIELD: Mask 401 sang 503 de bao ve session IDE
     if (gRes.statusCode === 401) {
-      sessionAffinity.endRequest();
-      console.error(`[AUTH-SHIELD] [PROTECT] Google tra ve 401 tren [${accName}]. Masking sang 503 de bao ve session IDE!`);
-      if (!clientRes.headersSent) {
+      clearAllTimeout();
+      safeEndSession();
+      console.error(`[AUTH-SHIELD] [PROTECT] Google tra ve 401 tren [${accName}]. Masking sang 503!`);
+      if (!clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
         clientRes.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
-        clientRes.end(JSON.stringify({
-          error: {
-            code: 503,
-            message: "Antigravity Proxy: Tat ca token dang duoc lam moi. Session an toan. Vui long thu lai."
-          }
-        }));
+        clientRes.end(create503AuthShieldPayload(503, accName));
       }
       return;
     }
 
-    // Phan hoi thanh cong hoac loi khong nam trong dien failover
     const isPaused = Boolean(context.rotationPaused);
     context.writeLiveStatus({
-      active: false,
-      timestamp: Date.now(),
-      account_email: accName,
-      account_name: account?.name || accName,
-      current_req: context.currentAccRequestsServed,
-      requests_per_account: context.requestsPerAccount,
-      total_requests: context.requestCount,
-      endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`,
-      method: reqMethod,
-      status: isPaused ? "paused" : "standby",
-      paused: isPaused,
-      statusCode: gRes.statusCode
+      active: false, timestamp: Date.now(), account_email: accName, account_name: account?.name || accName,
+      current_req: context.currentAccRequestsServed, requests_per_account: context.requestsPerAccount,
+      total_requests: context.requestCount, endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`,
+      method: reqMethod, status: isPaused ? "paused" : "standby", paused: isPaused, statusCode: gRes.statusCode
     });
 
-    // Bat su kien ket thuc stream that su de giai phong co gResFinished
-    gRes.on("end", () => {
-      if (!gResFinished) sessionAffinity.endRequest();
-      gResFinished = true;
+    gRes.on("data", () => {
+      resetTimeout(INACTIVITY_TIMEOUT_MS);
     });
-
-    gRes.on("close", () => {
-      if (!gResFinished) sessionAffinity.endRequest();
-      gResFinished = true;
-    });
-
-    // Bat loi stream truc tiep tu phia Google upstream
+    gRes.on("end", () => { clearAllTimeout(); safeEndSession(); activeGRes = null; });
+    gRes.on("close", () => { clearAllTimeout(); safeEndSession(); activeGRes = null; });
     gRes.on("error", (err) => {
+      clearAllTimeout();
       console.error(`[STREAM-ERR] Loi stream tu Google (${accName}):`, err.message);
-      if (!gResFinished) sessionAffinity.endRequest();
-      gResFinished = true;
-      if (!clientRes.writableEnded) {
-        clientRes.end();
-      }
+      safeEndSession();
+      destroyStream(gRes);
+      activeGRes = null;
+      if (!clientRes.destroyed && !clientRes.closed) clientRes.destroy(err);
     });
 
-    clientRes.writeHead(gRes.statusCode, gRes.headers);
-    gRes.pipe(clientRes);
-  });
+    clientRes.on("error", (err) => {
+      console.warn(`[CLIENT-STREAM-ERR] Client stream error tren [${accName}]:`, err.message);
+      safeEndSession();
+      destroyStream(gRes);
+      activeGRes = null;
+    });
 
-  // Client Abort / Socket Cleanup: giai phong socket upstream neu client IDE dong ket noi
-  clientRes.on("close", () => {
-    if (!gResFinished) sessionAffinity.endRequest();
-    if (!gResFinished && !gReq.destroyed) {
-      console.log(`[CLIENT-ABORT] Client IDE da dong ket noi som. Huy socket upstream cho [${accName}]`);
-      gReq.destroy();
+    if (!clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+      clientRes.writeHead(gRes.statusCode, gRes.headers);
+      gRes.pipe(clientRes);
     }
   });
 
-  gReq.on("timeout", () => {
-    console.warn(`[UPSTREAM-TIMEOUT] [WARN] Het thoi gian cho ket noi Google (${host}) sau 35s cho [${accName}]`);
-    if (!gResFinished) sessionAffinity.endRequest();
-    gResFinished = true;
-    gReq.destroy(new Error("Upstream connection timeout"));
+  attachClientCloseHandler({
+    clientRes, gReq, getActiveGRes: () => activeGRes,
+    safeEndSession: () => { clearAllTimeout(); safeEndSession(); },
+    onAbort: () => { isAborted = true; clearAllTimeout(); }, accName
   });
 
   gReq.on("error", (e) => {
+    clearAllTimeout();
     console.error(`[UPSTREAM-ERR] Loi ket noi Google (${host}) tren [${accName}]:`, e.message);
-    if (!gResFinished) sessionAffinity.endRequest();
-    gResFinished = true;
+    safeEndSession();
+    if (activeGRes) destroyStream(activeGRes);
 
-    if (attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
-      context.nextAccount(context.sessionId, true);
-      const nextAcc = context.getCurrentAccount();
+    if (!isAborted && attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+      const nextAcc = context.nextAccount(context.sessionId, true, isSubagent);
       console.warn(`[AUTO-FAILOVER-NET] [WARN] Loi socket (${e.message}). Doi sang ${nextAcc?.email}...`);
       executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
       return;
     }
 
-    if (!clientRes.headersSent) {
-      clientRes.writeHead(502, { "Content-Type": "application/json" });
-      clientRes.end(JSON.stringify({ error: "Bad Gateway", message: e.message }));
-    } else if (!clientRes.writableEnded) {
-      // Headers da gui ma gap loi socket upstream -> Ket thuc clientRes ngay de tranh treo IDE vinh vien!
-      console.warn(`[FORCE-END] Dong clientRes.end() sau loi socket upstream de tranh treo IDE`);
-      clientRes.end();
+    if (!clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+      clientRes.writeHead(504, { "Content-Type": "application/json" });
+      clientRes.end(JSON.stringify({ error: "Gateway Timeout", message: e.message }));
+    } else if (!clientRes.destroyed && !clientRes.closed) {
+      console.warn(`[ABORT-STREAM] Destroy clientRes de tranh gui empty payload gay loop IDE`);
+      clientRes.destroy(new Error("Stream aborted prematurely by upstream"));
     }
   });
 
-  if (finalBodyBuffer && finalBodyBuffer.length > 0) {
-    gReq.write(finalBodyBuffer);
-  }
+  if (finalBodyBuffer && finalBodyBuffer.length > 0) gReq.write(finalBodyBuffer);
   gReq.end();
 }
 

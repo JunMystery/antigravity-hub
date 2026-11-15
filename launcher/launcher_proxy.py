@@ -94,6 +94,17 @@ def ensure_proxy_running():
             else:
                 kwargs["start_new_session"] = True
 
+            proxy_env = os.environ.copy()
+            try:
+                try:
+                    from launcher.launcher_crypto import resolve_master_key
+                except ImportError:
+                    from launcher_crypto import resolve_master_key
+                proxy_env["ANTIGRAVITY_MASTER_KEY"] = resolve_master_key().hex()
+            except Exception:
+                pass
+            kwargs["env"] = proxy_env
+
             proc = subprocess.Popen(["node", PROXY_SCRIPT], **kwargs)
             try:
                 with open(PID_FILE, "w") as f:

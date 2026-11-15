@@ -2,6 +2,12 @@ const fs = require("node:fs");
 const { checkProactiveTokenRefresh } = require("./token_manager");
 const { agentPool } = require("./agent_pool");
 const { sessionAffinity } = require("./session_affinity");
+const {
+  saveRotatorState,
+  saveRotatorStateAsync,
+  restoreRotatorState,
+  resolveRestoredAccount
+} = require("./rotator_persistence");
 
 // Quan ly xoay vong tai khoan Round Robin co persistent state va session affinity
 class AccountRotator {
@@ -14,6 +20,7 @@ class AccountRotator {
     this.requestsPerAccount = 1;
     this.isRestored = false;
     this.rotationPaused = false;
+    this._saveTimer = null;
   }
 
   getCurrentAccount() {
@@ -22,145 +29,115 @@ class AccountRotator {
     const now = Date.now();
     for (let i = 0; i < this.accounts.length; i++) {
       const acc = this.accounts[(this.accountIndex + i) % total];
-      if (!acc.unhealthyUntil || acc.unhealthyUntil < now) {
-        return acc;
-      }
+      if (!acc.unhealthyUntil || acc.unhealthyUntil < now) return acc;
     }
     return this.accounts[this.accountIndex % total] || null;
   }
 
-  nextAccount(sessionId = null, isFailover = false) {
+  nextAccount(sessionId = null, isFailover = false, isSubagent = false) {
+    if (isSubagent && isFailover) return sessionAffinity.failoverSubagent(sessionId, this.accounts);
     const total = this.accounts.length || 1;
     this.accountIndex = (this.accountIndex + 1) % total;
     this.currentAccRequestsServed = 0;
-    const cur = this.getCurrentAccount();
-    if (isFailover && sessionId && cur) {
-      sessionAffinity.setAffinity(sessionId, cur);
-    }
-    this.saveRotatorState();
-    return cur;
+    this.saveRotatorStateDebounced();
+    return this.getCurrentAccount();
   }
 
-  /**
-   * Phan bo tai khoan nguyen tu voi Session Affinity & Concurrency Shield
-   */
-  allocateAccountForRequest(sessionId = null, isSubagent = false) {
-    if (this.accounts.length === 0) {
-      this.loadState();
-    }
+  allocateAccountForRequest(reqUrl = "/", host = "", headers = {}, bodyBuffer = null) {
+    if (this.accounts.length === 0) this.loadState();
 
-    // 1. Uu tien Sticky Session theo Conversation
-    if (sessionId) {
-      const affAcc = sessionAffinity.getAffinityAccount(sessionId, this.accounts);
-      if (affAcc) {
-        this.requestCount++;
-        return { account: affAcc, servedCount: this.currentAccRequestsServed, requestNumber: this.requestCount, isSticky: true };
+    const sessionId = sessionAffinity.extractSessionId(headers, bodyBuffer);
+    const isSub = sessionAffinity.isSubagent(reqUrl, host, headers, bodyBuffer, sessionId);
+
+    if (isSub) {
+      const subAlloc = sessionAffinity.allocateSubagentAccount(sessionId, this.accounts);
+      if (subAlloc && subAlloc.account) {
+        return {
+          account: subAlloc.account, isSubagent: true, isSticky: subAlloc.isSticky,
+          isNewSubagent: subAlloc.isNewSubagent, servedCount: 1,
+          requestNumber: subAlloc.requestNumber, sessionId
+        };
       }
     }
 
-    // 2. Concurrency Shield: Giu nguyen account cho Subagents song song
-    if (isSubagent || sessionAffinity.inFlightCount > 0) {
-      const burstAcc = sessionAffinity.getBurstAccount(this.accounts);
-      if (burstAcc) {
-        this.requestCount++;
-        if (sessionId) sessionAffinity.setAffinity(sessionId, burstAcc);
-        return { account: burstAcc, servedCount: this.currentAccRequestsServed, requestNumber: this.requestCount, isSticky: true };
-      }
+    if (sessionId && (!sessionAffinity.mainSessionId || !sessionAffinity.isMainSessionActive())) {
+      sessionAffinity.setMainSession(sessionId, this.getCurrentAccount());
     }
 
-    // 3. Xoay vong Round Robin thong thuong
     const current = this.getCurrentAccount();
-    if (sessionId && current) {
-      sessionAffinity.setAffinity(sessionId, current);
-    }
     this.requestCount++;
     this.currentAccRequestsServed++;
     const served = this.currentAccRequestsServed;
 
     if (!this.rotationPaused) {
-      if (this.currentAccRequestsServed >= this.requestsPerAccount) {
-        this.nextAccount();
-      } else {
-        this.saveRotatorState();
-      }
+      if (this.currentAccRequestsServed >= this.requestsPerAccount) this.nextAccount();
+      else this.saveRotatorStateDebounced();
     } else {
-      this.saveRotatorState();
+      this.saveRotatorStateDebounced();
     }
 
     return {
-      account: current,
-      servedCount: served,
-      requestNumber: this.requestCount,
-      isSticky: false
+      account: current, isSubagent: false, servedCount: served,
+      requestNumber: this.requestCount, sessionId
     };
   }
 
-  /**
-   * Luu trang thai luot tai khoan hien tai vao rotator_state.json
-   */
-  saveRotatorState() {
-    if (!this.config?.ROTATOR_STATE_FILE) return;
-    try {
-      const cur = this.getCurrentAccount();
-      const state = {
-        last_account_email: cur?.email || "",
-        last_account_id: cur?.id || "",
-        account_index: this.accountIndex,
-        current_req_served: this.currentAccRequestsServed,
-        total_requests: this.requestCount,
-        rotation_paused: this.rotationPaused,
-        updated_at: Date.now()
-      };
-      fs.writeFileSync(this.config.ROTATOR_STATE_FILE, JSON.stringify(state, null, 2), "utf8");
-    } catch (err) {
-      console.error("[ROTATOR-SAVE-ERR] Loi ghi rotator_state.json:", err.message);
-    }
+  saveRotatorStateDebounced(delay = 500) {
+    if (this._saveTimer) return;
+    this._saveTimer = setTimeout(() => {
+      this._saveTimer = null;
+      this.saveRotatorStateAsync().catch(() => {});
+    }, delay);
   }
 
-  /**
-   * Khoi phuc chinh xac luot tai khoan theo Email hoac tu dong chuyen tiep
-   */
-  restoreRotatorState() {
-    if (!this.config?.ROTATOR_STATE_FILE || !fs.existsSync(this.config.ROTATOR_STATE_FILE)) {
-      return;
+  async saveRotatorStateAsync() {
+    if (!this.config?.ROTATOR_STATE_FILE) return;
+    const cur = this.getCurrentAccount();
+    return saveRotatorStateAsync(this.config.ROTATOR_STATE_FILE, {
+      last_account_email: cur?.email || "",
+      last_account_id: cur?.id || "",
+      account_index: this.accountIndex,
+      current_req_served: this.currentAccRequestsServed,
+      total_requests: this.requestCount,
+      rotation_paused: this.rotationPaused,
+      updated_at: Date.now()
+    });
+  }
+
+  saveRotatorState() {
+    if (this._saveTimer) {
+      clearTimeout(this._saveTimer);
+      this._saveTimer = null;
     }
-    try {
-      const raw = fs.readFileSync(this.config.ROTATOR_STATE_FILE, "utf8");
-      if (!raw) return;
-      const state = JSON.parse(raw);
-      if (typeof state.total_requests === "number") {
-        this.requestCount = state.total_requests;
-      }
-      if (typeof state.rotation_paused === "boolean") {
-        this.rotationPaused = state.rotation_paused;
-      }
+    if (!this.config?.ROTATOR_STATE_FILE) return;
+    const cur = this.getCurrentAccount();
+    saveRotatorState(this.config.ROTATOR_STATE_FILE, {
+      last_account_email: cur?.email || "",
+      last_account_id: cur?.id || "",
+      account_index: this.accountIndex,
+      current_req_served: this.currentAccRequestsServed,
+      total_requests: this.requestCount,
+      rotation_paused: this.rotationPaused,
+      updated_at: Date.now()
+    });
+  }
 
-      if (this.accounts.length === 0) return;
+  restoreRotatorState() {
+    if (!this.config?.ROTATOR_STATE_FILE) return;
+    const state = restoreRotatorState(this.config.ROTATOR_STATE_FILE);
+    if (!state) return;
+    if (typeof state.total_requests === "number") this.requestCount = state.total_requests;
+    if (typeof state.rotation_paused === "boolean") this.rotationPaused = state.rotation_paused;
+    if (this.accounts.length === 0) return;
 
-      const targetEmail = (state.last_account_email || "").toLowerCase();
-      const targetId = state.last_account_id;
-
-      let foundIdx = -1;
-      if (targetId || targetEmail) {
-        foundIdx = this.accounts.findIndex((a) => {
-          const matchId = targetId && a.id === targetId;
-          const matchEmail = targetEmail && (a.email || a.name || "").toLowerCase() === targetEmail;
-          return matchId || matchEmail;
-        });
-      }
-
-      if (foundIdx !== -1) {
-        this.accountIndex = foundIdx;
-        this.currentAccRequestsServed = Math.max(0, parseInt(state.current_req_served, 10) || 0);
-        console.log(`[ROTATOR-RESTORE] [OK] Khoi phuc tai khoan: [${this.accounts[foundIdx].email}] (Luot: ${this.currentAccRequestsServed}/${this.requestsPerAccount})`);
-      } else {
-        const fallbackIdx = Math.max(0, parseInt(state.account_index, 10) || 0) % this.accounts.length;
-        this.accountIndex = fallbackIdx;
-        this.currentAccRequestsServed = 0;
-        console.log(`[ROTATOR-RESTORE] [FALLBACK] Tai khoan cu khong con active, chuyen sang: [${this.accounts[fallbackIdx].email}]`);
-      }
-    } catch (err) {
-      console.error("[ROTATOR-RESTORE-ERR] Loi doc rotator_state.json:", err.message);
+    const resolved = resolveRestoredAccount(this.accounts, state);
+    this.accountIndex = resolved.accountIndex;
+    this.currentAccRequestsServed = resolved.currentAccRequestsServed;
+    const restoredAcc = this.accounts[this.accountIndex];
+    if (resolved.matched) {
+      console.log(`[ROTATOR-RESTORE] [OK] Khoi phuc tai khoan: [${restoredAcc?.email}] (Luot: ${this.currentAccRequestsServed}/${this.requestsPerAccount})`);
+    } else {
+      console.log(`[ROTATOR-RESTORE] [FALLBACK] Tai khoan cu khong con active, chuyen sang: [${restoredAcc?.email}]`);
     }
   }
 
@@ -177,39 +154,51 @@ class AccountRotator {
         try {
           const cfg = JSON.parse(fs.readFileSync(this.config.PROFILES_FILE, "utf8"));
           this.requestsPerAccount = Math.max(1, parseInt(cfg.settings?.requests_per_account, 10) || 1);
-
           (cfg.profiles || []).forEach((p, idx) => {
             const prio = typeof p.order === "number" ? p.order : (idx + 1);
             if (p.email) orderMap.set(p.email.toLowerCase(), prio);
             if (p.name) orderMap.set(p.name.toLowerCase(), prio);
             if (p.id) orderMap.set(p.id.toLowerCase(), prio);
           });
-
           enabledEmails = new Set(
-            (cfg.profiles || [])
-              .filter((p) => p.enabled !== false)
+            (cfg.profiles || []).filter((p) => p.enabled !== false)
               .map((p) => (p.email || p.name || "").toLowerCase())
           );
         } catch (_) {}
       }
 
-      const valid = [];
-      for (const acc of allAccounts) {
+      const valid = allAccounts.filter((acc) => {
         const email = (acc.email || acc.name || "").toLowerCase();
-        if (enabledEmails && enabledEmails.size > 0 && !enabledEmails.has(email)) continue;
-        if (acc.accessToken || acc.refreshToken) valid.push(acc);
-      }
+        if (enabledEmails && enabledEmails.size > 0 && !enabledEmails.has(email)) return false;
+        return Boolean(acc.accessToken || acc.refreshToken);
+      });
 
-      // Sap xep danh sach theo thu tu uu tien (Priority/Order)
       valid.sort((a, b) => {
         const keyA = (a.email || a.name || "").toLowerCase();
         const keyB = (b.email || b.name || "").toLowerCase();
-        const ordA = orderMap.has(keyA) ? orderMap.get(keyA) : 99999;
-        const ordB = orderMap.has(keyB) ? orderMap.get(keyB) : 99999;
-        return ordA - ordB;
+        return (orderMap.get(keyA) ?? 99999) - (orderMap.get(keyB) ?? 99999);
       });
 
       if (valid.length > 0) {
+        // Preserve in-memory runtime cooldowns (unhealthyUntil) across disk reloads
+        const cooldownMap = new Map();
+        for (const existing of this.accounts) {
+          if (existing.unhealthyUntil && existing.unhealthyUntil > Date.now()) {
+            if (existing.id) cooldownMap.set(String(existing.id).toLowerCase(), existing.unhealthyUntil);
+            if (existing.email) cooldownMap.set(existing.email.toLowerCase(), existing.unhealthyUntil);
+          }
+        }
+
+        for (const fresh of valid) {
+          const freshId = fresh.id ? String(fresh.id).toLowerCase() : null;
+          const freshEmail = fresh.email ? fresh.email.toLowerCase() : null;
+          if (freshId && cooldownMap.has(freshId)) {
+            fresh.unhealthyUntil = cooldownMap.get(freshId);
+          } else if (freshEmail && cooldownMap.has(freshEmail)) {
+            fresh.unhealthyUntil = cooldownMap.get(freshEmail);
+          }
+        }
+
         this.accounts = valid;
         if (!this.isRestored) {
           this.restoreRotatorState();
@@ -233,16 +222,10 @@ class AccountRotator {
       this.nextAccount();
       const cur = this.getCurrentAccount();
       writeLiveStatus({
-        active: false,
-        timestamp: Date.now(),
-        account_email: cur?.email || "UNKNOWN",
-        account_name: cur?.name || cur?.email || "UNKNOWN",
-        current_req: this.currentAccRequestsServed,
-        requests_per_account: this.requestsPerAccount,
-        total_requests: this.requestCount,
-        endpoint: "manual_switch",
-        method: "SWITCH",
-        status: this.rotationPaused ? "paused" : "standby",
+        active: false, timestamp: Date.now(), account_email: cur?.email || "UNKNOWN",
+        account_name: cur?.name || cur?.email || "UNKNOWN", current_req: this.currentAccRequestsServed,
+        requests_per_account: this.requestsPerAccount, total_requests: this.requestCount,
+        endpoint: "manual_switch", method: "SWITCH", status: this.rotationPaused ? "paused" : "standby",
         paused: this.rotationPaused
       });
       if (httpRes) {
@@ -253,29 +236,17 @@ class AccountRotator {
     }
 
     if (cmd === "toggle_pause" || cmd === "pause" || cmd === "resume") {
-      if (cmd === "pause") {
-        this.rotationPaused = true;
-      } else if (cmd === "resume") {
-        this.rotationPaused = false;
-      } else {
-        this.rotationPaused = !this.rotationPaused;
-      }
+      this.rotationPaused = cmd === "pause" ? true : (cmd === "resume" ? false : !this.rotationPaused);
       this.saveRotatorState();
       const cur = this.getCurrentAccount();
       const statusLabel = this.rotationPaused ? "paused" : "standby";
       console.log(`[ROUND-ROBIN] Che do xoay vong: ${this.rotationPaused ? "TAM DUNG (PAUSED)" : "HOAT DONG (STANDBY)"}`);
       writeLiveStatus({
-        active: false,
-        timestamp: Date.now(),
-        account_email: cur?.email || "San sang",
-        account_name: cur?.name || cur?.email || "San sang",
-        current_req: this.currentAccRequestsServed,
-        requests_per_account: this.requestsPerAccount,
-        total_requests: this.requestCount,
+        active: false, timestamp: Date.now(), account_email: cur?.email || "San sang",
+        account_name: cur?.name || cur?.email || "San sang", current_req: this.currentAccRequestsServed,
+        requests_per_account: this.requestsPerAccount, total_requests: this.requestCount,
         endpoint: this.rotationPaused ? "Tam dung xoay vong" : "Dang lang nghe Port 20130",
-        method: this.rotationPaused ? "PAUSE" : "STANDBY",
-        status: statusLabel,
-        paused: this.rotationPaused
+        method: this.rotationPaused ? "PAUSE" : "STANDBY", status: statusLabel, paused: this.rotationPaused
       });
       if (httpRes) {
         httpRes.writeHead(200, { "Content-Type": "application/json" });

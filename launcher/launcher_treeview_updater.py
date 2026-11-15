@@ -6,6 +6,7 @@ và thao tác điều chỉnh thứ tự (Reorder) tài khoản trong bảng Lau
 
 from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt
 from launcher_storage import save_data
 
 def get_quota_color(val: float, is_valid: bool) -> str:
@@ -27,7 +28,7 @@ def _set_row_spinner(table, row: int, char: str, color: QColor):
         btn.setText(char)
         btn.setEnabled(False)
 
-def mark_all_rows_refreshing(win, spinner_char="◐"):
+def mark_all_rows_refreshing(win, spinner_char="⠋"):
     """Đánh dấu tất cả các hàng trong bảng đang trong trạng thái quét Quota bằng Busy icon."""
     if not hasattr(win, "treeview") or not win.treeview:
         return
@@ -37,11 +38,11 @@ def mark_all_rows_refreshing(win, spinner_char="◐"):
         win.refreshing_profile_ids = set()
     for row in range(table.rowCount()):
         item = table.item(row, 0)
-        if item and item.data(32):  # Qt.ItemDataRole.UserRole = 32
-            win.refreshing_profile_ids.add(item.data(32))
+        if item and item.data(Qt.ItemDataRole.UserRole):
+            win.refreshing_profile_ids.add(item.data(Qt.ItemDataRole.UserRole))
         _set_row_spinner(table, row, spinner_char, pending_color)
 
-def mark_single_row_refreshing(win, profile_id, spinner_char="◐"):
+def mark_single_row_refreshing(win, profile_id, spinner_char="⠋"):
     """Đánh dấu một hàng cụ thể đang trong trạng thái quét Quota bằng Busy icon."""
     if not hasattr(win, "treeview") or not win.treeview:
         return
@@ -52,7 +53,7 @@ def mark_single_row_refreshing(win, profile_id, spinner_char="◐"):
     win.refreshing_profile_ids.add(profile_id)
     for row in range(table.rowCount()):
         item = table.item(row, 0)
-        if item and item.data(32) == profile_id:
+        if item and item.data(Qt.ItemDataRole.UserRole) == profile_id:
             _set_row_spinner(table, row, spinner_char, pending_color)
             break
 
@@ -67,7 +68,7 @@ def update_refreshing_spinners(win, spinner_char):
     pending_color = QColor("#89b4fa")
     for row in range(table.rowCount()):
         item = table.item(row, 0)
-        if item and item.data(32) in pending_pids:
+        if item and item.data(Qt.ItemDataRole.UserRole) in pending_pids:
             _set_row_spinner(table, row, spinner_char, pending_color)
 
 def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid):
@@ -77,7 +78,7 @@ def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val,
     table = win.treeview
     for row in range(table.rowCount()):
         item = table.item(row, 0)
-        if item and item.data(32) == profile_id:
+        if item and item.data(Qt.ItemDataRole.UserRole) == profile_id:
             item_q5 = table.item(row, 3)
             if item_q5:
                 item_q5.setText(q5_text)

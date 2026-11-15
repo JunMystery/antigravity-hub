@@ -23,7 +23,7 @@ class AgentPool {
         keepAlive: true,
         keepAliveMsecs: 15000,
         maxSockets: 20,
-        timeout: 35000
+        timeout: 120000 // Extended Thinking models support (120s TTFB)
       });
       this.agents.set(key, agent);
     }

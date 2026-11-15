@@ -9,6 +9,7 @@ import threading
 import concurrent.futures
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
+from launcher_i18n import tr
 from launcher_storage import MANUAL_COOLDOWN, load_accounts, save_data
 from launcher_quota_fetcher import fetch_single_account_quota
 
@@ -28,16 +29,16 @@ def ensure_bridge(win) -> QuotaSignalBridge:
         win.quota_bridge = bridge
     return win.quota_bridge
 
-SPINNER_FRAMES = ["◐", "◓", "◑", "◒"]
+SPINNER_FRAMES = ["⠋", "⠙", "⠴", "⠦"]
 
 def start_spinner_animation(win):
-    """Khởi động QTimer chạy hiệu ứng xoay spinner Unicode."""
+    """Khởi động QTimer chạy hiệu ứng xoay spinner Unicode Braille hình vuông."""
     if not hasattr(win, "spinner_timer") or win.spinner_timer is None:
         win.spinner_timer = QTimer(win)
         win.spinner_timer.timeout.connect(lambda: spinner_tick(win))
     win.spinner_frame_idx = 0
     if not win.spinner_timer.isActive():
-        win.spinner_timer.start(80)
+        win.spinner_timer.start(120)
 
 def stop_spinner_animation(win):
     """Dừng QTimer hiệu ứng xoay spinner."""
@@ -73,7 +74,8 @@ def handle_all_done(win, results, now):
 
     win.is_refreshing_quota = False
     if hasattr(win, "lbl_info"):
-        win.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>Đã làm mới Quota {len(results)} tài khoản xong lúc {time.strftime('%H:%M:%S')}</span></b>")
+        msg = tr("quota.refresh_all_done", count=len(results), time=time.strftime('%H:%M:%S'))
+        win.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{msg}</span></b>")
 
     start_refresh_cooldown(win, MANUAL_COOLDOWN)
 
@@ -95,7 +97,8 @@ def handle_single_done(win, pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_
             break
     save_data(win.data)
     if hasattr(win, "lbl_info"):
-        win.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>Đã làm mới Quota [{prof_email}] xong lúc {time.strftime('%H:%M:%S')}</span></b>")
+        msg = tr("quota.refresh_single_done", email=prof_email, time=time.strftime('%H:%M:%S'))
+        win.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{msg}</span></b>")
 
 def handle_error(win):
     """Xử lý khôi phục giao diện khi quá trình quét ngầm gặp ngoại lệ."""
@@ -107,7 +110,8 @@ def handle_error(win):
         win.btn_refresh_all.setEnabled(True)
         win.btn_refresh_all.setText("⟳")
     if hasattr(win, "lbl_info"):
-        win.lbl_info.setText("<b><span style='color:#f38ba8;'>Quét Quota gặp lỗi. Vui lòng thử lại.</span></b>")
+        msg = tr("quota.refresh_error")
+        win.lbl_info.setText(f"<b><span style='color:#f38ba8;'>{msg}</span></b>")
 
 def get_quota_btn_label(loading: bool = False) -> str:
     """Trả về nhãn cho nút làm mới Quota trong hàng."""
@@ -157,10 +161,17 @@ def refresh_single_row_quota(win, prof_id):
             if matched_acc:
                 q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = fetch_single_account_quota(matched_acc, force=True, cached_info=prof)
             else:
-                q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, "Không khớp", False, 0, "Không khớp", False
-            bridge.single_done_signal.emit(prof_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
+                no_match = tr("quota.no_match")
+                q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, no_match, False, 0, no_match, False
+            try:
+                bridge.single_done_signal.emit(prof_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
+            except (RuntimeError, Exception):
+                pass
         except Exception:
-            bridge.error_signal.emit()
+            try:
+                bridge.error_signal.emit()
+            except (RuntimeError, Exception):
+                pass
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -185,7 +196,8 @@ def refresh_all_quota(win, widget=None):
     start_spinner_animation(win)
 
     if hasattr(win, "lbl_info"):
-        win.lbl_info.setText(f"<b><span style='color:#89b4fa;'>Đang làm mới Quota cho {len(profiles)} tài khoản...</span></b>")
+        msg = tr("quota.refreshing", count=len(profiles))
+        win.lbl_info.setText(f"<b><span style='color:#89b4fa;'>{msg}</span></b>")
 
     def worker():
         try:
@@ -200,16 +212,23 @@ def refresh_all_quota(win, widget=None):
                 if acc:
                     q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = fetch_single_account_quota(acc, force=True, cached_info=p)
                 else:
-                    q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, "Không khớp", False, 0, "Không khớp", False
+                    no_match = tr("quota.no_match")
+                    q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, no_match, False, 0, no_match, False
                 return p["id"], q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                 results = list(executor.map(query_profile, profiles))
 
             now = int(time.time())
-            bridge.all_done_signal.emit(results, now)
+            try:
+                bridge.all_done_signal.emit(results, now)
+            except (RuntimeError, Exception):
+                pass
         except Exception:
-            bridge.error_signal.emit()
+            try:
+                bridge.error_signal.emit()
+            except (RuntimeError, Exception):
+                pass
 
     threading.Thread(target=worker, daemon=True).start()
 
