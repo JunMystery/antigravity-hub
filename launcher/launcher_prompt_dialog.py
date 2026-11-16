@@ -135,12 +135,16 @@ def ask_close_action_prompt(parent=None):
 
 def show_about_prompt(parent=None):
     """Hiển thị hộp thoại giới thiệu ứng dụng About."""
+    try:
+        from launcher import __version__
+    except ImportError:
+        __version__ = "0.1.2"
     q_parent = parent if isinstance(parent, QWidget) else None
     dlg = QMessageBox(q_parent)
     dlg.setWindowTitle(tr("dialog.about_title"))
     if APP_ICON and os.path.exists(APP_ICON):
         dlg.setWindowIcon(QIcon(APP_ICON))
-    dlg.setText(tr("dialog.about_text"))
+    dlg.setText(tr("dialog.about_text", version=__version__))
     if APP_ICON and os.path.exists(APP_ICON):
         dlg.setIconPixmap(QPixmap(APP_ICON).scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
     dlg.setStandardButtons(QMessageBox.StandardButton.Ok)

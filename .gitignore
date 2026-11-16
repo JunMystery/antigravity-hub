@@ -5,7 +5,11 @@ rotator_state.json
 live_status.json
 proxy_cmd.json
 launched_apps.json
+token_metrics.json
+.master_key
 *.pid
+*.sqlite
+*.db
 
 # Thư mục cấu hình và dữ liệu profiles
 Antigravity-Profiles/
@@ -15,9 +19,13 @@ Antigravity-Profiles/
 proxy/certs/*.key
 proxy/certs/*.crt
 proxy/certs/*.pem
+proxy/certs/*.pfx
+proxy/certs/*.p12
 certs/*.key
 certs/*.crt
 certs/*.pem
+certs/*.pfx
+certs/*.p12
 !proxy/certs/.gitkeep
 !certs/.gitkeep
 

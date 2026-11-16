@@ -1,6 +1,6 @@
 # Antigravity Hub
 
-[![Version](https://img.shields.io/badge/Version-v0.1.1-blue.svg)](docs/changelogs/v0.1.1.md)
+[![Version](https://img.shields.io/badge/Version-v0.1.2-blue.svg)](docs/changelogs/v0.1.2.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 
@@ -107,6 +107,12 @@ python3 launcher/main.py --help
 # List accounts with status and quotas
 python3 launcher/main.py --list
 
+# Import accounts automatically from 9router
+python3 launcher/main.py --import-9router
+
+# Install and trust Root CA certificate in OS Trust Store
+python3 launcher/main.py --install-cert
+
 # Add a Google account via OAuth PKCE
 python3 launcher/main.py --add-google
 
@@ -136,6 +142,7 @@ python3 launcher/main.py --launch
 ## 📜 Release Changelogs
 
 Detailed release notes and migration guides are documented in the [Changelogs Directory](./docs/changelogs/README.md):
+- [v0.1.2 Changelog](./docs/changelogs/v0.1.2.md): Automated Root CA & Combined Trust Bundle (`ca-bundle.crt`), 5-step automated installation pipeline, native 9router account migration, zero-freeze Windows UX optimizations, and auto-closing OAuth tabs.
 - [v0.1.1 Changelog](./docs/changelogs/v0.1.1.md): Token Metrics Bar (Sent/Received/Cached full numbers), Streamlined 3-column Activity Table, Model Extraction, Dedicated Sidebar Logs View, Real-Time Proxy Timestamps, and Independent `token_metrics.json`.
 - [v0.1.0 Changelog](./docs/changelogs/v0.1.0.md): Antigravity Hub Rebranding, Quota Progress Bars, Reset Timers, Priority Steppers, System Tray.
 

@@ -20,8 +20,33 @@ function cleanupExpiredSessions() {
 setInterval(cleanupExpiredSessions, 60 * 1000);
 
 function renderHtml(title, message, isSuccess = true) {
-  const color = isSuccess ? "#27ae60" : "#e74c3c";
-  const icon = isSuccess ? "[OK]" : "[FAIL]";
+  if (isSuccess) {
+    return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title></title>
+  <script>
+    function doClose() {
+      try {
+        window.open('', '_self', '');
+        window.close();
+      } catch (_) {}
+    }
+    doClose();
+    window.addEventListener('DOMContentLoaded', doClose);
+    window.addEventListener('load', doClose);
+    setTimeout(doClose, 10);
+    setTimeout(doClose, 50);
+    setTimeout(doClose, 150);
+  </script>
+</head>
+<body style="background:#0f172a;margin:0;"></body>
+</html>`;
+  }
+
+  const color = "#e74c3c";
+  const icon = "[FAIL]";
   return `<!DOCTYPE html>
 <html>
 <head>

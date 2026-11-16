@@ -86,6 +86,9 @@ function createLeafCertificate(certsDir) {
         { type: 2, value: "*.googleapis.com" },
         { type: 2, value: "daily-cloudcode-pa.googleapis.com" },
         { type: 2, value: "cloudcode-pa.googleapis.com" },
+        { type: 2, value: "cloudaicompanion.googleapis.com" },
+        { type: 2, value: "oauth2.googleapis.com" },
+        { type: 2, value: "accounts.google.com" },
         { type: 2, value: "generativelanguage.googleapis.com" },
         { type: 2, value: "localhost" },
         { type: 7, ip: "127.0.0.1" }
@@ -104,5 +107,12 @@ function createLeafCertificate(certsDir) {
 }
 
 module.exports = {
+  ensureRootCertificate,
   createLeafCertificate
 };
+
+if (require.main === module) {
+  const targetDir = path.join(__dirname, "certs");
+  ensureRootCertificate(targetDir);
+  console.log(`[CERT] Root CA: ${path.join(targetDir, "ca.crt")}`);
+}

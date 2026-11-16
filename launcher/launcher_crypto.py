@@ -79,10 +79,29 @@ def resolve_master_key(force_refresh: bool = False) -> bytes:
             hex_k = get_keyring_master_key()
             if hex_k and len(hex_k) == 64:
                 _CACHED_MASTER_KEY = bytes.fromhex(hex_k)
+                try:
+                    key_file = os.path.join(CONFIG_DIR, ".master_key")
+                    if not os.path.exists(key_file):
+                        os.makedirs(CONFIG_DIR, exist_ok=True)
+                        with open(key_file, "w", encoding="utf-8") as f:
+                            f.write(hex_k + "\n")
+                        if os.name != "nt":
+                            os.chmod(key_file, 0o600)
+                except Exception:
+                    pass
                 return _CACHED_MASTER_KEY
             fresh = os.urandom(32)
             if set_keyring_master_key(fresh.hex()):
                 _CACHED_MASTER_KEY = fresh
+                try:
+                    key_file = os.path.join(CONFIG_DIR, ".master_key")
+                    os.makedirs(CONFIG_DIR, exist_ok=True)
+                    with open(key_file, "w", encoding="utf-8") as f:
+                        f.write(fresh.hex() + "\n")
+                    if os.name != "nt":
+                        os.chmod(key_file, 0o600)
+                except Exception:
+                    pass
                 return _CACHED_MASTER_KEY
     except Exception:
         pass

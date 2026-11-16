@@ -9,7 +9,10 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
-from launcher_storage import CONFIG_DIR
+try:
+    from launcher.launcher_storage import CONFIG_DIR
+except ImportError:
+    from launcher_storage import CONFIG_DIR
 
 TOKEN_METRICS_FILE = os.path.join(CONFIG_DIR, "token_metrics.json")
 

@@ -35,7 +35,8 @@ class TestViewNavigation(unittest.TestCase):
         self.assertIn("accounts", received_views)
         self.assertTrue(sidebar.buttons["accounts"].view_id == "accounts")
         self.assertIsNotNone(sidebar.lbl_footer)
-        self.assertIn("v0.1.1", sidebar.lbl_footer.text())
+        from launcher import __version__
+        self.assertIn(__version__, sidebar.lbl_footer.text())
         self.assertIn("JunMystery", sidebar.lbl_footer.text())
         self.assertIn(sidebar.buttons["dashboard"].text(), ["Dashboard", "Tổng quan"])
         self.assertIn(sidebar.buttons["accounts"].text(), ["Accounts", "Tài khoản"])

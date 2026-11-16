@@ -16,11 +16,11 @@ if ! command -v node &>/dev/null; then
     exit 1
 fi
 
-echo "[1/3] Cài đặt các thư viện Python (PyQt6, requests)..."
+echo "[1/5] Cài đặt các thư viện Python (PyQt6, requests, cryptography, keyring)..."
 pip install --break-system-packages -r requirements.txt || pip install -r requirements.txt
 
 echo ""
-echo "[2/3] Cài đặt phụ thuộc npm cho Micro-Proxy..."
+echo "[2/5] Cài đặt phụ thuộc npm cho Micro-Proxy..."
 cd proxy
 npm install
 cd ..
@@ -28,7 +28,15 @@ cd ..
 chmod +x launch.sh launcher/main.py bin/antigravity-launcher 2>/dev/null || true
 
 echo ""
-echo "[3/3] Tự động tạo Shortcut trên Desktop..."
+echo "[3/5] Khởi tạo và cài đặt chứng chỉ Root CA vào hệ thống..."
+python3 launcher/main.py --install-cert || true
+
+echo ""
+echo "[4/5] Kiểm tra và tự động nhập tài khoản từ 9router (nếu có)..."
+python3 launcher/main.py --import-9router || true
+
+echo ""
+echo "[5/5] Tự động tạo Shortcut trên Desktop..."
 python3 launcher/main.py --create-shortcut || true
 
 echo ""

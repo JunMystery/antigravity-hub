@@ -17,5 +17,6 @@ Antigravity Hub follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 | Version | Release Date | Highlights | Changelog Link |
 |---|---|---|---|
+| **v0.1.2** | 2026-11-16 | Automated Root CA & Combined Trust Bundle (`ca-bundle.crt`), 5-step automated installation pipeline, native 9router account migration, zero-freeze Windows UX optimizations, and auto-closing OAuth tabs. | [v0.1.2 Changelog](./v0.1.2.md) |
 | **v0.1.1** | 2026-11-16 | Token Metrics Bar (Sent/Received/Cached full numbers), Streamlined 3-column Activity Table, Model Extraction, Dedicated Sidebar Logs View, Real-Time Proxy Timestamps, and Independent `token_metrics.json`. | [v0.1.1 Changelog](./v0.1.1.md) |
 | **v0.1.0** | 2026-11-16 | Official Rebranding to Antigravity Hub, Quota Progress Bar with dynamic color gradients, Reset Timers, Priority Micro-Steppers, System Tray integration, and Keyring AES-256-GCM Envelope Encryption. | [v0.1.0 Changelog](./v0.1.0.md) |

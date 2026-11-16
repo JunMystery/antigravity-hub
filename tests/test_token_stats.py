@@ -184,7 +184,8 @@ class TestTokenWidgets(unittest.TestCase):
 
         process.exit(0);
         """
-        proc = subprocess.run(["node", "-e", node_script], cwd="/home/jun/Git/antigravity-launcher")
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        proc = subprocess.run(["node", "-e", node_script], cwd=repo_root)
         self.assertEqual(proc.returncode, 0)
 
     def test_full_log_dialog_creation(self):

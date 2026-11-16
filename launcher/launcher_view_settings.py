@@ -111,6 +111,10 @@ class SettingsView(QWidget):
         self.btn_shortcut.clicked.connect(self._create_shortcut)
         row_sc.addWidget(self.btn_shortcut)
 
+        self.btn_install_cert = QPushButton(tr("settings.install_cert"))
+        self.btn_install_cert.clicked.connect(self._install_cert)
+        row_sc.addWidget(self.btn_install_cert)
+
         self.btn_open_data = QPushButton(tr("settings.open_data_dir"))
         self.btn_open_data.clicked.connect(self._open_data_dir)
         row_sc.addWidget(self.btn_open_data)
@@ -157,6 +161,17 @@ class SettingsView(QWidget):
             self.lbl_sc_status.setText(f"<span style='color:#a6e3a1;'>{tr('settings.shortcut_success')}</span>")
         else:
             self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{tr('settings.shortcut_failed')}</span>")
+
+    def _install_cert(self):
+        try:
+            from launcher_cert import install_root_ca, is_root_ca_installed
+            ok = install_root_ca()
+            if ok or is_root_ca_installed():
+                self.lbl_sc_status.setText(f"<span style='color:#a6e3a1;'>{tr('settings.cert_success')}</span>")
+            else:
+                self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{tr('settings.cert_failed')}</span>")
+        except Exception as e:
+            self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{e}</span>")
 
     def _populate_retention_options(self):
         """Nạp danh sách các mốc thời gian lưu trữ theo ngôn ngữ hiện hành."""

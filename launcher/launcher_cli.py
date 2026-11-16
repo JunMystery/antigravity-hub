@@ -22,11 +22,21 @@ from launcher_proxy import (
     is_proxy_running, stop_proxy, ensure_proxy_running, launch_profile
 )
 from launcher_quota_fetcher import fetch_single_account_quota
+from launcher_importer import import_accounts_from_9router
 
 def run_cli(args):
     """Điều hướng và thực thi các tham số dòng lệnh CLI."""
     data = load_data()
     profiles = data.get("profiles", [])
+
+    if getattr(args, "import_9router", False):
+        import_accounts_from_9router()
+        return
+
+    if getattr(args, "install_cert", False):
+        from launcher_cert import install_root_ca
+        install_root_ca()
+        return
 
     if args.start_proxy:
         ensure_proxy_running()

@@ -10,6 +10,10 @@ import json
 import socket
 import signal
 import subprocess
+try:
+    from launcher.launcher_cert import ensure_combined_ca_bundle
+except ImportError:
+    from launcher_cert import ensure_combined_ca_bundle
 from launcher_storage import (
     CONFIG_DIR, PROXY_PORT, PROXY_SCRIPT, PID_FILE,
     LAUNCHED_APPS_FILE, ROOT_CA, PROXY_PAC, APP_BINARY,
@@ -29,7 +33,12 @@ def stop_proxy():
             with open(PID_FILE, "r") as f:
                 pid = int(f.read().strip())
             if sys.platform == "win32":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
             else:
                 os.kill(pid, signal.SIGTERM)
                 time.sleep(0.1)
@@ -47,8 +56,13 @@ def stop_proxy():
 
     if sys.platform == "win32":
         try:
-            ps_kill = f"Get-NetTCPConnection -LocalPort {PROXY_PORT} -ErrorAction SilentlyContinue | ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force }}"
-            subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_kill], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            cmd_out = subprocess.check_output(["netstat", "-ano", "-p", "tcp"], creationflags=no_win, text=True)
+            for line in cmd_out.splitlines():
+                if f":{PROXY_PORT} " in line and "LISTENING" in line:
+                    parts = line.strip().split()
+                    if len(parts) >= 5 and parts[-1].isdigit():
+                        subprocess.run(["taskkill", "/F", "/PID", parts[-1]], creationflags=no_win, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
     else:
@@ -90,7 +104,8 @@ def ensure_proxy_running():
 
             kwargs = {"stdout": log_f, "stderr": subprocess.STDOUT}
             if sys.platform == "win32":
-                kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+                no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                kwargs["creationflags"] = no_win | subprocess.CREATE_NEW_PROCESS_GROUP
             else:
                 kwargs["start_new_session"] = True
 
@@ -112,8 +127,15 @@ def ensure_proxy_running():
             except Exception:
                 pass
 
-            for _ in range(25):
-                time.sleep(0.1)
+            for _ in range(40):
+                time.sleep(0.04)
+                try:
+                    from PyQt6.QtWidgets import QApplication
+                    app = QApplication.instance()
+                    if app:
+                        app.processEvents()
+                except Exception:
+                    pass
                 if is_proxy_running():
                     break
 
@@ -146,9 +168,10 @@ def stop_all_launched_apps():
             pass
 
     if sys.platform == "win32":
+        no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         for pid in pids_to_kill:
             try:
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], creationflags=no_win, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
     else:
@@ -217,10 +240,11 @@ def launch_profile(data_dir: str, target: str = "app", use_proxy: bool = True) -
 
     if use_proxy:
         ensure_proxy_running()
+        bundle_path = ensure_combined_ca_bundle()
         if os.path.exists(ROOT_CA):
             env["NODE_EXTRA_CA_CERTS"] = ROOT_CA
-            env["SSL_CERT_FILE"] = ROOT_CA
-            env["REQUESTS_CA_BUNDLE"] = ROOT_CA
+            env["SSL_CERT_FILE"] = bundle_path
+            env["REQUESTS_CA_BUNDLE"] = bundle_path
 
         proxy_url = f"http://127.0.0.1:{PROXY_PORT}"
         env["HTTPS_PROXY"] = proxy_url
@@ -242,7 +266,8 @@ def launch_profile(data_dir: str, target: str = "app", use_proxy: bool = True) -
     try:
         kwargs = {"env": env, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         if sys.platform == "win32":
-            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            detached = getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | detached
         else:
             kwargs["start_new_session"] = True
 

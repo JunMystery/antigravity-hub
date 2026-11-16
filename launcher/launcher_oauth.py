@@ -7,13 +7,12 @@ Cung cấp cơ chế Multi-signal Detection tự động đóng dialog trong < 3
 import os
 import time
 import json
-import threading
 import webbrowser
 import urllib.request
 
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QPushButton, QLineEdit,
-    QFrame, QMessageBox, QApplication
+    QDialog, QVBoxLayout, QLabel, QPushButton,
+    QMessageBox, QApplication
 )
 from PyQt6.QtCore import QTimer, Qt
 
@@ -26,20 +25,29 @@ STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 
 def start_google_oauth_flow(parent_window):
     """Mở hộp thoại đăng nhập OAuth và lắng nghe callback từ Micro-Proxy."""
-    ensure_proxy_running()
+    QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
     try:
+        QApplication.processEvents()
+        ensure_proxy_running()
+        QApplication.processEvents()
         req = urllib.request.Request("http://127.0.0.1:20130/_oauth/start")
         with urllib.request.urlopen(req, timeout=5) as r:
             oauth_data = json.loads(r.read().decode())
         auth_url = oauth_data.get("authUrl")
         state = oauth_data.get("state")
     except Exception as e:
+        QApplication.restoreOverrideCursor()
         QMessageBox.critical(
             parent_window,
             "Lỗi kết nối Micro-Proxy",
             f"Không thể khởi tạo phiên OAuth trên cổng 20130: {e}"
         )
         return
+    finally:
+        try:
+            QApplication.restoreOverrideCursor()
+        except Exception:
+            pass
 
     webbrowser.open(auth_url)
 
@@ -69,22 +77,6 @@ def start_google_oauth_flow(parent_window):
         QTimer.singleShot(2000, lambda: btn_copy.setText("Sao chép link đăng nhập"))
     btn_copy.clicked.connect(on_copy_clicked)
     layout.addWidget(btn_copy)
-
-    sep = QFrame()
-    sep.setFrameShape(QFrame.Shape.HLine)
-    sep.setFrameShadow(QFrame.Shadow.Sunken)
-    layout.addWidget(sep)
-
-    lbl_fb = QLabel("Dán URL callback dự phòng (nếu trình duyệt không tự chuyển hướng):")
-    lbl_fb.setWordWrap(True)
-    layout.addWidget(lbl_fb)
-
-    entry_fb = QLineEdit()
-    entry_fb.setPlaceholderText("http://localhost:20130/oauth/callback?code=...")
-    layout.addWidget(entry_fb)
-
-    btn_submit = QPushButton("Xác nhận mã/URL")
-    layout.addWidget(btn_submit)
 
     # Multi-signal Detection Snapshot
     start_time_ms = int(time.time() * 1000)
@@ -136,49 +128,6 @@ def start_google_oauth_flow(parent_window):
     poll_timer = QTimer(dialog)
     poll_timer.timeout.connect(check_poll)
     poll_timer.start(250)
-
-    def on_submit_manual():
-        nonlocal is_done
-        text = entry_fb.text().strip()
-        if not text:
-            return
-        btn_submit.setEnabled(False)
-        btn_submit.setText("Đang xử lý...")
-        def worker():
-            try:
-                req_data = json.dumps({"callbackUrl": text, "state": state}).encode("utf-8")
-                m_req = urllib.request.Request(
-                    "http://127.0.0.1:20130/_oauth/manual",
-                    data=req_data,
-                    headers={"Content-Type": "application/json"},
-                    method="POST"
-                )
-                with urllib.request.urlopen(m_req, timeout=10) as m_res:
-                    res_json = json.loads(m_res.read().decode())
-                if res_json.get("success"):
-                    def on_manual_ok():
-                        nonlocal is_done
-                        is_done = True
-                        dialog.accept()
-                    QTimer.singleShot(0, on_manual_ok)
-                else:
-                    def on_manual_err():
-                        btn_submit.setEnabled(True)
-                        btn_submit.setText("Xác nhận mã/URL")
-                        entry_fb.clear()
-                        entry_fb.setPlaceholderText("Lỗi: Mã hoặc URL không hợp lệ")
-                    QTimer.singleShot(0, on_manual_err)
-            except Exception as err:
-                def on_exc():
-                    btn_submit.setEnabled(True)
-                    btn_submit.setText("Xác nhận mã/URL")
-                    entry_fb.clear()
-                    entry_fb.setPlaceholderText(f"Lỗi: {err}")
-                QTimer.singleShot(0, on_exc)
-        threading.Thread(target=worker, daemon=True).start()
-
-    btn_submit.clicked.connect(on_submit_manual)
-    entry_fb.returnPressed.connect(on_submit_manual)
 
     btn_cancel = QPushButton("Hủy bỏ")
     btn_cancel.clicked.connect(dialog.reject)
