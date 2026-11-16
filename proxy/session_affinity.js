@@ -38,10 +38,7 @@ class SessionAffinityManager {
       } catch (_) {}
     }
 
-    // 3. Fallback cuoi cung neu khong co gi khac
-    const fallbackId = h["x-client-request-id"] || h["client-request-id"];
-    if (fallbackId) return String(fallbackId);
-
+    // Khong su dung x-client-request-id lam session ID vi moi HTTP request co mot request ID rieng biet
     return null;
   }
 

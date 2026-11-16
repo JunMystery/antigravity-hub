@@ -9,6 +9,13 @@ const {
   resolveRestoredAccount
 } = require("./rotator_persistence");
 
+function isSameAccount(a, b) {
+  if (!a || !b) return false;
+  if (a.id && b.id && a.id === b.id) return true;
+  if (a.email && b.email && a.email.toLowerCase() === b.email.toLowerCase()) return true;
+  return false;
+}
+
 // Quan ly xoay vong tai khoan Round Robin co persistent state va session affinity
 class AccountRotator {
   constructor(config) {
@@ -24,19 +31,39 @@ class AccountRotator {
   }
 
   getCurrentAccount() {
-    const total = this.accounts.length || 1;
-    if (this.accounts.length === 0) return null;
+    const total = this.accounts.length;
+    if (total === 0) return null;
     const now = Date.now();
-    for (let i = 0; i < this.accounts.length; i++) {
-      const acc = this.accounts[(this.accountIndex + i) % total];
-      if (!acc.unhealthyUntil || acc.unhealthyUntil < now) return acc;
+    for (let i = 0; i < total; i++) {
+      const idx = (this.accountIndex + i) % total;
+      const acc = this.accounts[idx];
+      if (!acc.unhealthyUntil || acc.unhealthyUntil < now) {
+        if (i > 0) {
+          this.accountIndex = idx;
+          this.currentAccRequestsServed = 0;
+        }
+        return acc;
+      }
     }
     return this.accounts[this.accountIndex % total] || null;
   }
 
-  nextAccount(sessionId = null, isFailover = false, isSubagent = false) {
-    if (isSubagent && isFailover) return sessionAffinity.failoverSubagent(sessionId, this.accounts);
+  nextAccount(sessionId = null, isFailover = false, isSubagent = false, failedAccount = null) {
     const total = this.accounts.length || 1;
+    if (isFailover) {
+      const cur = this.getCurrentAccount();
+      if (cur && (!cur.unhealthyUntil || cur.unhealthyUntil <= Date.now())) {
+        if (!failedAccount || !isSameAccount(cur, failedAccount)) {
+          this.currentAccRequestsServed = 1;
+          if (this.currentAccRequestsServed >= this.requestsPerAccount) {
+            this.accountIndex = (this.accountIndex + 1) % total;
+            this.currentAccRequestsServed = 0;
+          }
+          this.saveRotatorStateDebounced();
+          return cur;
+        }
+      }
+    }
     this.accountIndex = (this.accountIndex + 1) % total;
     this.currentAccRequestsServed = 0;
     this.saveRotatorStateDebounced();
@@ -48,21 +75,6 @@ class AccountRotator {
 
     const sessionId = sessionAffinity.extractSessionId(headers, bodyBuffer);
     const isSub = sessionAffinity.isSubagent(reqUrl, host, headers, bodyBuffer, sessionId);
-
-    if (isSub) {
-      const subAlloc = sessionAffinity.allocateSubagentAccount(sessionId, this.accounts);
-      if (subAlloc && subAlloc.account) {
-        return {
-          account: subAlloc.account, isSubagent: true, isSticky: subAlloc.isSticky,
-          isNewSubagent: subAlloc.isNewSubagent, servedCount: 1,
-          requestNumber: subAlloc.requestNumber, sessionId
-        };
-      }
-    }
-
-    if (sessionId && (!sessionAffinity.mainSessionId || !sessionAffinity.isMainSessionActive())) {
-      sessionAffinity.setMainSession(sessionId, this.getCurrentAccount());
-    }
 
     const current = this.getCurrentAccount();
     this.requestCount++;
@@ -77,8 +89,11 @@ class AccountRotator {
     }
 
     return {
-      account: current, isSubagent: false, servedCount: served,
-      requestNumber: this.requestCount, sessionId
+      account: current,
+      isSubagent: isSub,
+      servedCount: served,
+      requestNumber: this.requestCount,
+      sessionId
     };
   }
 

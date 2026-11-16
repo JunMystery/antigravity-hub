@@ -9,7 +9,38 @@ import time
 import json
 import urllib.request
 import urllib.parse
+from datetime import datetime, timezone
 from launcher_storage import CACHE_TTL, CLIENT_ID, CLIENT_SECRET, USER_AGENT
+
+def format_reset_time(iso_str: str) -> str:
+    """
+    Chuyển đổi timestamp ISO 8601 (UTC) thành chuỗi đếm ngược:
+    - Nếu >= 24h: 'Reset in Xd Yh'
+    - Nếu < 24h: 'Reset in HH:MM'
+    - Nếu đã qua thời gian reset: 'Resetting...'
+    """
+    if not iso_str:
+        return ""
+    try:
+        clean_iso = iso_str.replace("Z", "+00:00")
+        target_dt = datetime.fromisoformat(clean_iso)
+        now_dt = datetime.now(timezone.utc)
+        diff_sec = int((target_dt - now_dt).total_seconds())
+
+        if diff_sec <= 0:
+            return "Resetting..."
+
+        hours = diff_sec // 3600
+        mins = (diff_sec % 3600) // 60
+
+        if hours >= 24:
+            days = hours // 24
+            rem_hours = hours % 24
+            return f"Reset in {days}d {rem_hours}h"
+
+        return f"Reset in {hours:02d}:{mins:02d}"
+    except Exception:
+        return ""
 
 def get_ssl_context():
     """Tạo SSL Context tương thích cao cho truy vấn Google API."""
@@ -35,9 +66,11 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
                 cached_info.get("quota_5h_val", 0),
                 cached_info.get("quota_5h", "--"),
                 cached_info.get("quota_5h_valid", False),
+                cached_info.get("quota_5h_reset", ""),
                 cached_info.get("quota_weekly_val", 0),
                 cached_info.get("quota_weekly", "--"),
-                cached_info.get("quota_weekly_valid", False)
+                cached_info.get("quota_weekly_valid", False),
+                cached_info.get("quota_weekly_reset", "")
             )
 
     token = acc.get("accessToken", "")
@@ -61,7 +94,7 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
             pass
 
     if not token:
-        return 0, "N/A", False, 0, "N/A", False
+        return 0, "N/A", False, "", 0, "N/A", False, ""
 
     headers = {
         "Authorization": f"Bearer {token}",
@@ -93,6 +126,8 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
         frac_5h = None
         frac_weekly = None
         has_5h_bucket = False
+        raw_reset_5h = None
+        raw_reset_weekly = None
 
         for g in qdata.get("groups", []):
             if "gemini" in g.get("displayName", "").lower():
@@ -100,11 +135,19 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
                     w = b.get("window", "").lower()
                     bid = b.get("bucketId", "").lower()
                     f = b.get("remainingFraction")
+                    rt = b.get("resetTime")
                     if w == "5h" or "5h" in bid:
                         has_5h_bucket = True
                         frac_5h = f
+                        if rt:
+                            raw_reset_5h = rt
                     elif w == "weekly" or "weekly" in bid:
                         frac_weekly = f
+                        if rt:
+                            raw_reset_weekly = rt
+
+        q5_reset = format_reset_time(raw_reset_5h) if raw_reset_5h else ""
+        qw_reset = format_reset_time(raw_reset_weekly) if raw_reset_weekly else ""
 
         if has_5h_bucket and frac_5h is not None:
             q5_val = max(0, min(100, round(frac_5h * 100)))
@@ -114,6 +157,7 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
             q5_val = 0
             q5_text = "--"
             q5_valid = False
+            q5_reset = ""
 
         if frac_weekly is not None:
             qw_val = max(0, min(100, round(frac_weekly * 100)))
@@ -123,7 +167,8 @@ def fetch_single_account_quota(acc: dict, force: bool = False, cached_info: dict
             qw_val = 0
             qw_text = "N/A"
             qw_valid = False
+            qw_reset = ""
 
-        return q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid
+        return q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset
     except Exception:
-        return 0, "Lỗi", False, 0, "Lỗi", False
+        return 0, "Lỗi", False, "", 0, "Lỗi", False, ""

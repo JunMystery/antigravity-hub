@@ -1,165 +1,146 @@
-# Antigravity Profile Launcher & Micro-Proxy (Cross-Platform)
+# Antigravity Hub
 
-Hệ thống quản lý Profile và Transparent Micro-Proxy luân chuyển Round Robin đa tài khoản dành cho **Antigravity App (Agentic 2.0)** và **Antigravity IDE (Gemini Cloud Code)**. Hỗ trợ đầy đủ đa nền tảng **Windows** và **Linux** với giao diện **PyQt6** hiện đại theo bảng màu **Catppuccin Mocha Dark**.
+[![Version](https://img.shields.io/badge/Version-v0.1.1-blue.svg)](docs/changelogs/v0.1.1.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 
----
-
-## 1. Tính Năng Nổi Bật
-
-### 1.1. Giao Diện Người Dùng Hiện Đại (PyQt6 & Catppuccin Mocha)
-- **Kiến trúc điều hướng Sidebar (3 Chuyên mục)**:
-  - **Dashboard**: Thanh trạng thái liền khối (CompactStatusBar), nút khởi chạy nhanh phân nhóm màu sắc rõ ràng (`Khởi chạy App (2.0)` xanh pastel, `Khởi chạy IDE` tím pastel), điều khiển luân chuyển Proxy (`Kế tiếp`, `Tạm dừng/Tiếp tục`) và luồng hoạt động trực tiếp (Live Activity Stream).
-  - **Tài khoản (Accounts)**: Quản lý danh sách tài khoản Google, công tắc Bật/Tắt (iOS Toggle Switch), điều chỉnh thứ tự ưu tiên (Micro-Stepper ▲/▼ kèm nhập trực tiếp), giám sát hạn mức Quota (5h / Tuần) với hiệu ứng Braille góc vuông (`⠋`, `⠙`, `⠴`, `⠦`), và chế độ tự động quét định kỳ (Auto: ON/OFF - 5 phút).
-  - **Cài đặt (Settings)**: Tự động dò tìm hoặc duyệt chọn đường dẫn App/IDE, tạo Shortcut Desktop, mở nhanh thư mục dữ liệu hệ thống, cấu hình thời gian lưu giữ log (7, 30, 90 ngày) tự động dọn dẹp và nút xóa trắng log an toàn.
-- **Header Liền Khối 3 Phân Vùng Tinh Tế**: Gộp trạng thái kết nối, địa chỉ email tài khoản đang hoạt động và số lượt phục vụ vào một khối duy nhất, loại bỏ hiện tượng nhảy kích thước thẻ khi email thay đổi độ dài.
-- **Bảng Nhật Ký Hoạt Động Tinh Gọn (Activity Stream)**: Hiển thị 1 bảng duy nhất, duy trì 20 request HTTP thật gần nhất (`POST streamGenerateContent → email`, `Refresh Token → email [OK]`), tự động lọc bỏ các banner và dòng kẻ phân cách hệ thống.
-- **Hỗ trợ Đa Ngôn ngữ (i18n)**: Chuyển đổi linh hoạt và tức thì giữa Tiếng Việt (VI) và Tiếng Anh (EN) qua Dropdown Box ở góc dưới Sidebar.
-
-### 1.2. Micro-Proxy Round Robin Độc Lập (Port 20130)
-- **Tự động luân chuyển tài khoản**: Luân chuyển tài khoản mượt mà theo ngưỡng cấu hình (`requests_per_account`), tự động lưu vết trạng thái xoay vòng vào `rotator_state.json` và nối tiếp chính xác lượt phục vụ khi khởi động lại (`[ROTATOR-RESTORE]`).
-- **Dedicated Per-Account HTTPS Agent Pool**: Mỗi tài khoản sở hữu socket pool độc lập, cô lập kết nối 100%, tái sử dụng socket qua `keepAlive: 15s`, ngăn ngừa hoàn toàn hiện tượng rò rỉ session giữa các tài khoản.
-- **Hỗ trợ Mô hình Suy luận Chuyên sâu (Extended Thinking)**: Tối ưu Time-To-First-Byte (TTFB) timeout lên đến 120 giây và sliding window 45 giây giữa các chunk SSE, loại bỏ tình trạng ngắt kết nối sớm khi Gemini 2.0 Flash Thinking / Extended Thinking tính toán chuỗi suy luận dài.
-- **Tự Động Phục Hồi Lỗi (Auto-Failover) & Anti-Thundering Herd**:
-  - Tự động cấp mới Token khi gặp HTTP 401; cơ chế deduplication ngăn chặn các request song song gửi đồng thời dẫn đến lỗi `invalid_grant`.
-  - Tự động chuyển tài khoản tiếp theo khi tài khoản hiện tại cạn quota (HTTP 429) hoặc lỗi quyền (HTTP 403).
-- **Tuân thủ Chuẩn HTTP RFC 7230 §3.3.2 / RFC 9112 §6.1**: Tự động dọn dẹp tiêu đề `transfer-encoding` khi request đã có `content-length`, ngăn ngừa lỗi HTTP 400 Bad Request từ Google Frontend (GFE).
-
-### 1.3. Bảo Mật & Mã Hóa Dữ Liệu Đa Tầng
-- **Envelope Encryption AES-256-GCM**: Toàn bộ Access Token và Refresh Token được mã hóa an toàn với tiền tố `enc:v2:`.
-- **Tích hợp OS Keyring & Fallback Machine-GUID**: Tự động lưu khóa mã hóa vào hệ thống bảo mật phần cứng OS Keyring (Linux Secret Service / Windows Credential Manager). Khi chạy trong môi trường không có GUI keyring (headless/server), hệ thống tự động fallback sang khóa máy tính duy nhất (Machine-GUID PBKDF2 với 100.000 vòng lặp).
+A dedicated multi-account manager and local transparent micro-proxy engineered specifically for Google's Antigravity ecosystem: **Antigravity 2.0 (Desktop Application)** and **Antigravity IDE (VS Code Code Editor)**. It enables seamless Google account rotation, real-time quota tracking, and subagent session affinity without relying on generic third-party gateway layers.
 
 ---
 
-## 2. Cấu Trúc Thư Mục Dự Án
+## 🖥️ Supported Client Surfaces
 
+Antigravity provides two official user surfaces, both natively supported by this launcher and micro-proxy:
+
+- **Antigravity 2.0 (Desktop Application)**: Google's standalone desktop application designed for agent orchestration, conversational chat canvases, background automation (cron/timers), and multi-turn subagent delegation.
+- **Antigravity IDE (Code Editor)**: The standalone AI-first development environment (built on VS Code) featuring in-editor predictive code completions (Antigravity Tab), inline instructions (<kbd>Ctrl</kbd>+<kbd>I</kbd>), code lenses, and collaborative pair-programming agents.
+
+---
+
+## 📦 Quick Installation
+
+### Windows
+```cmd
+git clone https://github.com/JunMystery/antigravity-hub.git
+cd antigravity-hub
+setup.bat
+launch.bat
 ```
-antigravity-launcher/
-├── launcher/                           # Mã nguồn Launcher GUI & CLI (Python PyQt6)
-│   ├── main.py                         # Entrypoint ứng dụng Python
-│   ├── launcher_window.py              # Cửa sổ chính điều phối Sidebar & Views
-│   ├── launcher_sidebar.py             # Thanh điều hướng Sidebar hiện đại
-│   ├── launcher_view_dashboard.py      # View Tổng quan: Trạng thái & Live Activity Stream
-│   ├── launcher_view_accounts.py       # View Quản lý Tài khoản & Quota
-│   ├── launcher_view_settings.py       # View Cài đặt: Đường dẫn, Log retention & Shortcut
-│   ├── launcher_widget.py              # Thành phần UI dùng chung (CompactStatusBar, NavButton, SettingRow)
-│   ├── launcher_activity_widget.py     # Bảng nhật ký hoạt động tinh gọn 1 bảng (20 requests cap)
-│   ├── launcher_treeview.py            # Quản lý bảng danh sách tài khoản
-│   ├── launcher_treeview_updater.py    # Điều phối cập nhật Quota, reorder & spinner
-│   ├── launcher_order_widget.py        # Widget ô thứ tự tích hợp Micro-Stepper ▲/▼
-│   ├── launcher_toggle_switch.py       # Công tắc Bật/Tắt tròn chuẩn iOS (ToggleSwitch)
-│   ├── launcher_theme.py               # Bảng phong cách QSS Catppuccin Mocha Dark
-│   ├── launcher_storage.py             # Quản lý lưu trữ profiles, accounts và cấu hình
-│   ├── launcher_paths.py               # Quản lý đường dẫn đa nền tảng & chứng chỉ Root CA
-│   ├── launcher_crypto.py              # Mã hóa AES-256-GCM & cơ chế Envelope v2
-│   ├── launcher_keyring.py             # Tích hợp OS Keyring & fallback Machine-GUID
-│   ├── launcher_log_manager.py         # Quản lý nhật ký, retention (7/30/90 ngày) & pruning
-│   ├── launcher_proxy.py               # Quản lý vòng đời tiến trình Node.js proxy
-│   ├── launcher_quota_fetcher.py       # Truy vấn hạn mức Quota từ Google Cloud AI API
-│   ├── launcher_quota_runner.py        # Quét Quota ngầm đa luồng & animation Braille góc vuông
-│   ├── launcher_oauth.py               # Luồng đăng nhập Google OAuth 2.0 PKCE
-│   ├── launcher_cli.py                 # Giao diện dòng lệnh CLI quản trị tự động
-│   ├── launcher_shortcut.py            # Tạo Shortcut Desktop đa nền tảng
-│   ├── launcher_i18n.py                # Hệ thống dịch thuật & bản địa hóa ngôn ngữ
-│   └── locales/
-│       ├── en.json                     # Từ điển bản ngữ Tiếng Anh
-│       └── vi.json                     # Từ điển bản ngữ Tiếng Việt
-├── proxy/                              # Mã nguồn Micro-Proxy độc lập (Node.js)
-│   ├── index.js                        # Master listener (Port 20130), PAC routing & TLS MITM
-│   ├── chat_handler.js                 # Chuyển tiếp request, xử lý SSE stream & failover
-│   ├── chat_payload_helper.js          # Phân loại endpoint, chuẩn hóa payload & project ID
-│   ├── account_rotator.js              # Thuật toán Round-Robin, tính toán lượt & hạn mức
-│   ├── rotator_persistence.js          # Lưu trữ bền vững trạng thái con trỏ xoay vòng
-│   ├── session_affinity.js             # Quản lý Subagent & sticky session binding
-│   ├── agent_pool.js                   # Dedicated per-account HTTPS Agent pool
-│   ├── socket_cleanup.js               # Xử lý đóng socket an toàn & chống unhandled stream error
-│   ├── token_manager.js                # Tự động refresh token, chống thundering herd
-│   ├── cert_provider.js                # Khởi tạo chứng chỉ Root CA & Leaf đầy đủ TLS chain
-│   ├── package.json
-│   └── certs/                         # Thư mục lưu trữ chứng chỉ SSL cục bộ
-├── tests/                              # Bộ kiểm thử tự động (42 Unit Tests)
-│   ├── test_crypto.py                  # Kiểm tra mã hóa AES-256 & OS Keyring
-│   ├── test_log_manager.py             # Kiểm tra log retention, pruning & parsing
-│   ├── test_activity_logs.py           # Kiểm tra bảng activity stream & 20-item cap
-│   ├── test_quota_display.py           # Kiểm tra hiển thị Quota & Braille square animation
-│   ├── test_remediations.py            # Kiểm tra các bản vá proxy & token refresh
-│   └── test_view_navigation.py         # Kiểm tra điều hướng Sidebar, Settings & Views
-├── setup.bat                           # Script cài đặt tự động cho Windows
-├── launch.bat                          # Script khởi chạy nhanh cho Windows
-├── setup.sh                            # Script cài đặt tự động cho Linux
-├── launch.sh                           # Script khởi chạy nhanh cho Linux
-├── requirements.txt                    # Thư viện Python phụ thuộc (PyQt6, requests, cryptography, keyring)
-├── AUDIT_REPORT.md                     # Báo cáo kiểm định kỹ thuật chuyên sâu
-└── README.md                           # Tài liệu hướng dẫn sử dụng
+
+### Linux
+```bash
+git clone https://github.com/JunMystery/antigravity-hub.git
+cd antigravity-hub
+chmod +x setup.sh launch.sh
+./setup.sh
+./launch.sh
 ```
 
 ---
 
-## 3. Cài Đặt & Khởi Chạy
+## 🎯 Why a Dedicated Micro-Proxy? (vs. Third-Party Gateways like 9Router)
 
-### Yêu cầu hệ thống:
-- **Python**: Phiên bản 3.10 trở lên.
-- **Node.js**: Phiên bản 18 LTS trở lên.
+Third-party AI gateways and multi-provider routers (such as **9Router** or commercial proxy endpoints) are designed as universal abstraction layers supporting 40+ upstream providers. While useful for cross-provider fallback, using generic third-party gateways with Antigravity introduces key technical limitations:
 
-### Trên Windows:
-1. Nhấp đúp vào tệp **`setup.bat`** để tự động cài đặt các gói phụ thuộc Python và Node.js.
-2. Nhấp đúp vào tệp **`launch.bat`** để mở Launcher.
+1. **Format & Payload Transformation**:
+   - Generic gateways like 9Router translate API formats (e.g., mapping between OpenAI, Claude, and Gemini schemas) and apply prompt modifications or token compression (e.g., RTK).
+   - Antigravity 2.0 and Antigravity IDE rely on Google's proprietary Cloud Code PA RPC protocol (`daily-cloudcode-pa.googleapis.com` / `cloudcode-pa.googleapis.com`). Format translation can strip critical headers, alter parameter structures, or cause unexpected serialization failures.
+2. **Subagent Hard-Lock & Rapid Quota Exhaustion in 9Router**:
+   - In 9Router, whenever Gemini spawns subagents (such as Codebase Researchers, Test Runners, or Background Workers), 9Router **hard-locks all subagent requests onto the single account that requested the spawn**.
+   - As a result, all heavy, token-intensive subagent loops continuously hammer that single parent account without rotating, burning through its quota in minutes while other accounts in your pool sit completely idle.
+   - When that single account exhausts its quota, the entire subagent workflow crashes or stalls.
+3. **Throttling & Intermediate Latency**:
+   - Relaying traffic through third-party multi-provider translation pipelines adds latency and exposes requests to third-party rate limits, unexpected bandwidth throttling, and connection drops during long Server-Sent Events (SSE) reasoning chains.
 
-### Trên Linux:
-1. Cấp quyền thực thi và cài đặt:
-   ```bash
-   chmod +x setup.sh launch.sh
-   ./setup.sh
-   ```
-2. Khởi chạy Launcher:
-   ```bash
-   ./launch.sh
-   ```
+**Antigravity Micro-Proxy** solves this by running a specialized, local proxy (`127.0.0.1:20130`) designed exclusively for Google's native protocols with Dual-Track Subagent Allocation.
 
 ---
 
-## 4. Thao Tác Dòng Lệnh (CLI)
+## ⚡ Core Technical Pillars
 
-Launcher hỗ trợ đầy đủ các lệnh CLI để quản lý mà không cần mở giao diện đồ họa:
+### 1. Zero-Mutation Native Request Pass-Through
+- **Untouched Protocol Fidelity**: Forwards authentic client HTTP requests and protobuf/JSON structures directly to Google's official Cloud Code endpoints without modification.
+- **Zero Schema Conversion**: Does not decode or wrap requests into synthetic formats, ensuring 100% compatibility with official Gemini models and tool-calling features.
+
+### 2. Direct Google Connection & High-Speed Local Rotation
+- **Direct-to-Google Communication**: Connects directly from your machine to Google Frontend (GFE) using dedicated per-account socket pools (`keepAlive: 15s`). No intermediate relays or third-party speed caps.
+- **Intelligent Round-Robin & Auto-Failover**: Rotates active Google accounts locally based on configured request thresholds (`requests_per_account`). If an account exhausts quota (HTTP 429) or hits an authorization error (HTTP 403), the proxy immediately fails over to the next available account without dropping the user query.
+- **Extended Thinking SSE Support**: Tailored for long reasoning models (Gemini 2.0 Flash Thinking) with a 120-second time-to-first-byte (TTFB) timeout and a 45-second sliding window between SSE chunks.
+
+### 3. Dual-Track Subagent Routing (Anti-Quota Exhaustion)
+- **Automatic Account Rotation for New Subagents**: Unlike 9Router which traps all subagents on the spawning account, Antigravity assigns every newly spawned subagent to a **fresh account** from the pool (`allocateSubagentAccount`). This prevents intense subagent background workloads from exhausting the user's primary account quota.
+- **Intra-Task Context Pinning (Prompt Caching)**: Within each subagent's active task lifecycle (< 60s idle), successive turns remain pinned to that allocated account to leverage Google Gemini's Prompt Caching and maintain conversation coherence.
+- **Main Editor Isolation**: Keeps interactive editor chat strictly isolated from background agent workloads.
+
+### 4. Real-Time Token Analytics & Independent Persistence
+- **Zero-Latency Passive Sniffing**: Sniffs authentic Google `usageMetadata` (`Sent`, `Received`, `Cached`) directly from stream chunks without buffering or delaying client responses.
+- **Interactive Dashboard Metrics Bar**: View aggregated token counts across **24 Hours**, **7 Days**, **30 Days**, and **All Time** with exact 15-digit number display across 3 compact cards (`Sent`, `Received`, `Cached`).
+- **Independent Storage (`token_metrics.json`)**: Token statistics are stored in structured hourly time-series buckets independent of `proxy.log`, ensuring that clearing or pruning logs preserves accumulated statistics 100%.
+- **Streamlined Dashboard Activity**: Real-time 3-column recent requests panel (`Model | In / Out | When`) with authentic Gemini model name extraction (`[MODEL: <name>]`).
+- **Dedicated Sidebar Logs View**: Independent 5-column structured log viewer (`Time | Thread | Action/Model | Account | Tokens`) with lightweight native rendering, instant text search, real-time timestamps, and direct raw log file opening.
+
+---
+
+## 📊 Comparison: Antigravity Micro-Proxy vs. Third-Party Gateways
+
+| Technical Capability | Antigravity Micro-Proxy (This Project) | Third-Party Gateways (e.g., 9Router) |
+|---|:---:|:---:|
+| **Architecture Scope** | Dedicated specifically for Antigravity 2.0 & Antigravity IDE | Generic router for 40+ multi-model providers |
+| **Request Handling** | **Zero-mutation pass-through** (Authentic legacy Google protocol) | API format translation, prompt alteration, token compression |
+| **Subagent Allocation** | **Dual-Track Round-Robin**: Assigns fresh accounts to new subagents, preventing single-account quota exhaustion | **Spawning-Account Hard Lock**: Traps all subagents on parent account, causing rapid quota burnout |
+| **Subagent Prompt Caching** | **Yes** (Pins account within subagent task lifecycle < 60s) | No intra-task affinity control |
+| **Connection Path** | **Direct Local-to-Google** (`127.0.0.1` -> Google Frontend) | Through multi-provider translation pipeline |
+| **Bandwidth / Throughput** | **Unrestricted** (Direct local socket pool) | Subject to gateway processing overhead & provider limits |
+| **Extended Thinking Support** | **Yes** (Optimized 120s TTFB + 45s SSE sliding window) | Variable; often timeouts on prolonged thinking models |
+| **Credential Storage** | **Local AES-256-GCM Envelope Encryption** (OS Keyring) | Plaintext config files / environment variables |
+
+---
+
+## 💻 CLI Quick Reference
+
+Manage accounts and settings directly from the terminal:
 
 ```bash
-# Xem trợ giúp dòng lệnh
+# Display CLI help
 python3 launcher/main.py --help
 
-# Liệt kê danh sách tài khoản kèm trạng thái và quota
+# List accounts with status and quotas
 python3 launcher/main.py --list
 
-# Đăng nhập thêm tài khoản Google mới qua OAuth PKCE
+# Add a Google account via OAuth PKCE
 python3 launcher/main.py --add-google
 
-# Quét và cập nhật Quota toàn bộ tài khoản
+# Refresh quotas across all active accounts
 python3 launcher/main.py --refresh-quota
 
-# Đặt ngưỡng chuyển đổi tài khoản (ví dụ 10 request / tài khoản)
+# Configure rotation threshold (e.g., 10 requests per account)
 python3 launcher/main.py --requests-per-account 10
 
-# Bật hoặc Tắt tham gia xoay vòng cho một tài khoản
+# Enable or disable an account
 python3 launcher/main.py --toggle <ACCOUNT_EMAIL_OR_ID>
 
-# Khởi chạy Antigravity App (2.0) hoặc IDE với cấu hình proxy
-python3 launcher/main.py --launch <ACCOUNT_EMAIL_OR_ID>
+# Launch Antigravity 2.0 (App) or Antigravity IDE with active proxy
+python3 launcher/main.py --launch
 ```
 
 ---
 
-## 5. Kiểm Thử Hệ Thống (Automated Testing)
+## 🔒 Security & Privacy
 
-Dự án tích hợp bộ kiểm thử tự động toàn diện bao phủ toàn bộ chức năng từ mã hóa, proxy đến giao diện PyQt6:
-
-```bash
-python3 -m unittest discover -s tests -p "test_*.py"
-```
-*Kết quả: 42/42 tests PASS 100%.*
+- **Hardware-Backed Encryption**: OAuth tokens are encrypted at rest using machine-bound **AES-256-GCM Envelope Encryption** integrated with OS Keyring (Windows Credential Manager / Linux Secret Service).
+- **Loopback Isolation**: Local micro-proxy TLS certificates are bound strictly to `127.0.0.1:20130`.
+- **Zero Data Collection**: No telemetry, analytics, or user prompts are ever collected or sent to external servers.
 
 ---
 
-## 6. Chính Sách Bảo Mật & Dữ Liệu
+## 📜 Release Changelogs
 
-- **Nguyên tắc Bare-Bone**: Mã nguồn repository hoàn toàn **KHÔNG** chứa bất kỳ token, cookie, khóa riêng tư hay thông tin cá nhân nào.
-- **Lưu trữ Cục bộ Bảo mật**: Thông tin tài khoản được lưu trữ tại thư mục cục bộ của người dùng (`%APPDATA%\antigravity-launcher\` trên Windows hoặc `~/.config/antigravity-launcher/` trên Linux) với phân quyền truy cập nghiêm ngặt (`0o600`).
-- **Mã hóa Khóa phần cứng**: Token luôn được mã hóa hai lớp trước khi ghi xuống đĩa, bảo vệ an toàn ngay cả khi tệp cấu hình bị sao chép trái phép.
+Detailed release notes and migration guides are documented in the [Changelogs Directory](./docs/changelogs/README.md):
+- [v0.1.1 Changelog](./docs/changelogs/v0.1.1.md): Token Metrics Bar (Sent/Received/Cached full numbers), Streamlined 3-column Activity Table, Model Extraction, Dedicated Sidebar Logs View, Real-Time Proxy Timestamps, and Independent `token_metrics.json`.
+- [v0.1.0 Changelog](./docs/changelogs/v0.1.0.md): Antigravity Hub Rebranding, Quota Progress Bars, Reset Timers, Priority Steppers, System Tray.
 
+---
+
+## 📄 License
+
+Distributed under the MIT License. Copyright © 2026 JunMystery.

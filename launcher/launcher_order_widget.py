@@ -7,7 +7,7 @@ Hiển thị số thứ tự kèm cụm nút Micro-Stepper (▲/▼) xếp dọc
 from PyQt6.QtWidgets import (
     QWidget, QHBoxLayout, QVBoxLayout, QPushButton, QLineEdit
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 from PyQt6.QtGui import QIntValidator
 
 from launcher_i18n import tr
@@ -24,12 +24,12 @@ class OrderCellWidget(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 1, 4, 1)
-        layout.setSpacing(3)
+        layout.setSpacing(6)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # 1. Ô hiển thị / nhập số thứ tự
         self.edit_num = QLineEdit(str(order_num), self)
-        self.edit_num.setFixedWidth(28)
+        self.edit_num.setFixedWidth(26)
         self.edit_num.setFixedHeight(22)
         self.edit_num.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.edit_num.setValidator(QIntValidator(1, 9999, self))
@@ -41,7 +41,7 @@ class OrderCellWidget(QWidget):
                 border-radius: 3px;
                 font-weight: bold;
                 font-size: 12px;
-                padding: 0px;
+                padding: 0px 2px;
             }
             QLineEdit:hover, QLineEdit:focus {
                 background-color: #313244;
@@ -109,3 +109,6 @@ class OrderCellWidget(QWidget):
 
         if val != self.order_num:
             self.on_edit_callback(self.pid, val)
+
+    def sizeHint(self) -> QSize:
+        return QSize(68, 24)

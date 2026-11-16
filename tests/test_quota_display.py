@@ -14,6 +14,10 @@ from PyQt6.QtGui import QColor
 from launcher_treeview_updater import (
     get_quota_color, _set_row_spinner, update_row_quota_display
 )
+from launcher_order_widget import OrderCellWidget
+from launcher_quota_fetcher import format_reset_time
+from launcher_quota_widget import QuotaCellWidget, QuotaProgressBar
+from datetime import datetime, timezone, timedelta
 
 app = QApplication.instance() or QApplication(["-platform", "offscreen"])
 
@@ -89,6 +93,98 @@ class TestQuotaDisplay(unittest.TestCase):
         self.assertEqual(btn.text(), "⟳")
         self.assertTrue(btn.isEnabled())
         self.assertNotIn("prof_test_123", win.refreshing_profile_ids)
+
+    def test_order_cell_widget_dimensions_and_spacing(self):
+        """Xác nhận ô nhập STT và nút micro-stepper không bị chồng lấn với số có 2 chữ số (VD: 10)."""
+        widget = OrderCellWidget(
+            pid="prof_10",
+            order_num=10,
+            is_first=False,
+            is_last=False,
+            on_step_callback=lambda p, d: None,
+            on_edit_callback=lambda p, v: None
+        )
+        self.assertEqual(widget.edit_num.maximumWidth(), 26)
+        self.assertGreaterEqual(widget.layout().spacing(), 6)
+        self.assertGreaterEqual(widget.sizeHint().width(), 68)
+
+        # Kiểm tra khoảng cách trực quan giữa ô nhập và nút bấm
+        widget.adjustSize()
+        edit_right = widget.edit_num.x() + widget.edit_num.width()
+        btn_left = widget.btn_up.x()
+        self.assertGreaterEqual(btn_left - edit_right, 4)
+
+    def test_format_reset_time_logic(self):
+        """Xác nhận logic format thời gian reset: < 24h, >= 24h, đã qua, và rỗng."""
+        self.assertEqual(format_reset_time(""), "")
+        self.assertEqual(format_reset_time(None), "")
+        self.assertEqual(format_reset_time("invalid-date-string"), "")
+
+        now = datetime.now(timezone.utc)
+        # 1. Trong vòng 24h: 'Reset in HH:MM'
+        target_2h = (now + timedelta(hours=2, minutes=30, seconds=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual(format_reset_time(target_2h), "Reset in 02:30")
+
+        # 2. Trên 24h: 'Reset in Xd Yh'
+        target_3d = (now + timedelta(days=3, hours=5, minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual(format_reset_time(target_3d), "Reset in 3d 5h")
+
+        # 3. Đã qua thời gian reset: 'Resetting...'
+        target_past = (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.assertEqual(format_reset_time(target_past), "Resetting...")
+
+    def test_quota_cell_widget_rendering(self):
+        """Xác nhận QuotaCellWidget hiển thị progress bar gradient, text trắng và dòng reset."""
+        w = QuotaCellWidget(val=75, text="75%", is_valid=True, reset_text="Reset in 03:45")
+        self.assertFalse(w.bar.isHidden())
+        self.assertEqual(w.bar.width(), 38)
+        self.assertEqual(w.lbl_percent.text(), "75%")
+        self.assertIn("#ffffff", w.lbl_percent.styleSheet().lower())
+        self.assertEqual(w.lbl_reset.text(), "Reset in 03:45")
+        self.assertFalse(w.lbl_reset.isHidden())
+        self.assertEqual(w.sizeHint().width(), 105)
+
+        # Kiểm tra chế độ spinner
+        w.set_spinner("⠋", QColor("#89b4fa"))
+        self.assertTrue(w.bar.isHidden())
+        self.assertTrue(w.lbl_reset.isHidden())
+        self.assertEqual(w.lbl_percent.text(), "⠋")
+
+    def test_update_row_quota_display_with_quota_cell_widget(self):
+        """Xác nhận update_row_quota_display cập nhật chuẩn xác QuotaCellWidget trong bảng."""
+        table = QTableWidget(1, 6)
+        item_order = QTableWidgetItem("1")
+        item_order.setData(Qt.ItemDataRole.UserRole, "prof_456")
+        table.setItem(0, 0, item_order)
+
+        w5 = QuotaCellWidget(val=0, text="--", is_valid=False)
+        ww = QuotaCellWidget(val=0, text="--", is_valid=False)
+        table.setCellWidget(0, 3, w5)
+        table.setCellWidget(0, 4, ww)
+
+        class DummyWin:
+            def __init__(self, t):
+                self.treeview = t
+                self.refreshing_profile_ids = {"prof_456"}
+
+        win = DummyWin(table)
+        update_row_quota_display(
+            win, "prof_456",
+            85, "85%", True,
+            42, "42%", True,
+            q5_reset="Reset in 04:12",
+            qw_reset="Reset in 5d 2h"
+        )
+
+        self.assertEqual(w5.lbl_percent.text(), "85%")
+        self.assertEqual(w5.lbl_reset.text(), "Reset in 04:12")
+        self.assertFalse(w5.bar.isHidden())
+        self.assertEqual(w5.bar.val, 85)
+
+        self.assertEqual(ww.lbl_percent.text(), "42%")
+        self.assertEqual(ww.lbl_reset.text(), "Reset in 5d 2h")
+        self.assertFalse(ww.bar.isHidden())
+        self.assertEqual(ww.bar.val, 42)
 
 if __name__ == "__main__":
     unittest.main()

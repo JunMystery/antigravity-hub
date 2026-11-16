@@ -17,11 +17,15 @@ def get_quota_color(val: float, is_valid: bool) -> str:
 
 def _set_row_spinner(table, row: int, char: str, color: QColor):
     for col in (3, 4):
-        item = table.item(row, col)
-        if item:
-            item.setText(char)
-            if color:
-                item.setForeground(color)
+        widget = table.cellWidget(row, col)
+        if widget and hasattr(widget, "set_spinner"):
+            widget.set_spinner(char, color)
+        else:
+            item = table.item(row, col)
+            if item:
+                item.setText(char)
+                if color:
+                    item.setForeground(color)
     cell = table.cellWidget(row, 5)
     btn = cell.findChild(QPushButton) if cell else None
     if btn:
@@ -71,7 +75,7 @@ def update_refreshing_spinners(win, spinner_char):
         if item and item.data(Qt.ItemDataRole.UserRole) in pending_pids:
             _set_row_spinner(table, row, spinner_char, pending_color)
 
-def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid):
+def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid, q5_reset="", qw_reset=""):
     """Cập nhật hiển thị Quota cho một hàng theo profile_id."""
     if hasattr(win, "refreshing_profile_ids"):
         win.refreshing_profile_ids.discard(profile_id)
@@ -79,15 +83,23 @@ def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val,
     for row in range(table.rowCount()):
         item = table.item(row, 0)
         if item and item.data(Qt.ItemDataRole.UserRole) == profile_id:
-            item_q5 = table.item(row, 3)
-            if item_q5:
-                item_q5.setText(q5_text)
-                item_q5.setForeground(QColor(get_quota_color(q5_val, q5_valid)))
+            w5 = table.cellWidget(row, 3)
+            if w5 and hasattr(w5, "set_quota"):
+                w5.set_quota(q5_val, q5_text, q5_valid, q5_reset)
+            else:
+                item_q5 = table.item(row, 3)
+                if item_q5:
+                    item_q5.setText(q5_text)
+                    item_q5.setForeground(QColor(get_quota_color(q5_val, q5_valid)))
 
-            item_qw = table.item(row, 4)
-            if item_qw:
-                item_qw.setText(qw_text)
-                item_qw.setForeground(QColor(get_quota_color(qw_val, qw_valid)))
+            ww = table.cellWidget(row, 4)
+            if ww and hasattr(ww, "set_quota"):
+                ww.set_quota(qw_val, qw_text, qw_valid, qw_reset)
+            else:
+                item_qw = table.item(row, 4)
+                if item_qw:
+                    item_qw.setText(qw_text)
+                    item_qw.setForeground(QColor(get_quota_color(qw_val, qw_valid)))
 
             cell = table.cellWidget(row, 5)
             btn = cell.findChild(QPushButton) if cell else None

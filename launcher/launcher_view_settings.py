@@ -23,6 +23,7 @@ from launcher_log_manager import (
     get_retention_days, set_retention_days, clear_log, prune_logs
 )
 from launcher_widget import SettingRow
+from launcher_tray import TraySettingsGroup
 
 class SettingsView(QWidget):
     """View cấu hình hệ thống, đường dẫn thực thi và nhật ký."""
@@ -99,7 +100,11 @@ class SettingsView(QWidget):
         grp_logs_layout.addLayout(row_clear)
         layout.addWidget(self.grp_logs)
 
-        # 3. Desktop Shortcut & Thư mục Dữ liệu (Data Directory)
+        # 3. Nhóm Cửa sổ & Khay hệ thống
+        self.grp_tray = TraySettingsGroup(self.win, self)
+        layout.addWidget(self.grp_tray)
+
+        # 4. Desktop Shortcut & Thư mục Dữ liệu (Data Directory)
         row_sc = QHBoxLayout()
         row_sc.setSpacing(8)
         self.btn_shortcut = QPushButton(tr("settings.create_shortcut"))
@@ -179,6 +184,11 @@ class SettingsView(QWidget):
             err_msg = tr("settings.open_data_failed", error=str(e))
             self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{err_msg}</span>")
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "grp_tray"):
+            self.grp_tray.populate()
+
     def retranslate_ui(self):
         """Cập nhật giao diện khi đổi ngôn ngữ động."""
         if hasattr(self, "grp_paths"):
@@ -209,6 +219,8 @@ class SettingsView(QWidget):
             self.btn_shortcut.setText(tr("settings.create_shortcut"))
         if hasattr(self, "btn_open_data"):
             self.btn_open_data.setText(tr("settings.open_data_dir"))
+        if hasattr(self, "grp_tray"):
+            self.grp_tray.retranslate_ui()
         if hasattr(self, "btn_save"):
             self.btn_save.setText(tr("btn.save"))
 
@@ -242,5 +254,7 @@ class SettingsView(QWidget):
         if days:
             self.win.data["settings"]["log_retention_days"] = int(days)
             set_retention_days(days)
+        if hasattr(self, "grp_tray"):
+            self.grp_tray.save()
         save_data(self.win.data)
         QMessageBox.information(self, tr("settings.title"), tr("settings.saved_msg"))

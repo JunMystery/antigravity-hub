@@ -4,6 +4,7 @@ const { getAgentForAccount } = require("./agent_pool");
 const { decryptToken } = require("./crypto_helper");
 const { sessionAffinity } = require("./session_affinity");
 const { destroyStream, attachClientCloseHandler } = require("./socket_cleanup");
+const { extractUsageMetadata, recordTokens, formatTokenCount } = require("./token_tracker");
 const {
   isAiChatEndpoint,
   rewriteChatPayload,
@@ -31,9 +32,12 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     : sessionAffinity.isSubagent(reqUrl, host, origHeaders, bodyBuffer, context.sessionId);
   const tag = isSubagent ? "[SUBAGENT]" : "[MAIN]";
 
-  const fwdHeaders = { ...origHeaders, host, "user-agent": "antigravity/2.24.0 linux/x64" };
+  const userAgent = origHeaders["user-agent"] || (process.platform === "win32" ? "antigravity/2.24.0 win32/x64" : "antigravity/2.24.0 linux/x64");
+  const fwdHeaders = { ...origHeaders, host, "user-agent": userAgent };
   delete fwdHeaders["host"];
   fwdHeaders["host"] = host;
+  if (!fwdHeaders["x-client-name"]) fwdHeaders["x-client-name"] = "antigravity";
+  if (!fwdHeaders["x-client-version"]) fwdHeaders["x-client-version"] = "2.24.0";
 
   if (account && account.accessToken) {
     const plainToken = decryptToken(account.accessToken);
@@ -112,7 +116,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
           executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
         } else {
           console.warn(`[AUTO-FAILOVER-401] [FAIL] Refresh that bai cho ${accName}. Chuyen tiep...`);
-          const nextAcc = context.nextAccount(context.sessionId, true, isSubagent);
+          const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
           executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
         }
       });
@@ -123,10 +127,13 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     if ((gRes.statusCode === 429 || gRes.statusCode === 403 || gRes.statusCode === 404) && attempt <= totalAccs) {
       clearAllTimeout();
       safeEndSession();
+      if (account && (gRes.statusCode === 429 || gRes.statusCode === 403)) {
+        account.unhealthyUntil = Date.now() + 60 * 1000;
+      }
       const errText = await readErrorBody(gRes);
       console.warn(`[AUTO-FAILOVER] [WARN] Tai khoan ${accName} bi HTTP ${gRes.statusCode}: ${errText.slice(0, 200)}!`);
 
-      const nextAcc = context.nextAccount(context.sessionId, true, isSubagent);
+      const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
       context.writeLiveStatus({
         active: true, status: "FAILOVER", error_account: accName, error_code: gRes.statusCode,
         message: `[WARN] ${accName} bi loi ${gRes.statusCode} -> Dang doi sang ${nextAcc?.email}...`,
@@ -160,11 +167,34 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
       method: reqMethod, status: isPaused ? "paused" : "standby", paused: isPaused, statusCode: gRes.statusCode
     });
 
-    gRes.on("data", () => {
+    let tailBuffer = "";
+    let latestMeta = null;
+
+    gRes.on("data", (chunk) => {
       resetTimeout(INACTIVITY_TIMEOUT_MS);
+      if (chunk) {
+        const textChunk = tailBuffer + chunk.toString("utf8");
+        tailBuffer = textChunk.slice(-512);
+        const meta = extractUsageMetadata(textChunk);
+        if (meta) {
+          latestMeta = { ...(latestMeta || {}), ...meta };
+        }
+      }
     });
-    gRes.on("end", () => { clearAllTimeout(); safeEndSession(); activeGRes = null; });
-    gRes.on("close", () => { clearAllTimeout(); safeEndSession(); activeGRes = null; });
+
+    function commitRecordedTokens() {
+      if (latestMeta) {
+        recordTokens(latestMeta, context?.config?.CONFIG_DIR);
+        const sK = formatTokenCount(latestMeta.sent);
+        const rK = formatTokenCount(latestMeta.received);
+        const cK = formatTokenCount(latestMeta.cached);
+        console.log(`[TOKENS] [${accName}] Sent: ${sK} | Recv: ${rK} | Cached: ${cK}`);
+        latestMeta = null;
+      }
+    }
+
+    gRes.on("end", () => { clearAllTimeout(); commitRecordedTokens(); safeEndSession(); activeGRes = null; });
+    gRes.on("close", () => { clearAllTimeout(); commitRecordedTokens(); safeEndSession(); activeGRes = null; });
     gRes.on("error", (err) => {
       clearAllTimeout();
       console.error(`[STREAM-ERR] Loi stream tu Google (${accName}):`, err.message);
@@ -200,7 +230,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     if (activeGRes) destroyStream(activeGRes);
 
     if (!isAborted && attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
-      const nextAcc = context.nextAccount(context.sessionId, true, isSubagent);
+      const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
       console.warn(`[AUTO-FAILOVER-NET] [WARN] Loi socket (${e.message}). Doi sang ${nextAcc?.email}...`);
       executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);
       return;

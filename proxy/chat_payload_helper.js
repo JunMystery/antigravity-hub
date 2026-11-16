@@ -10,6 +10,14 @@ function isAiChatEndpoint(url) {
     url.includes(":streamGenerateContent") ||
     url.includes(":generateChat") ||
     url.includes(":streamGenerateChat") ||
+    url.includes(":generateCode") ||
+    url.includes(":streamGenerateCode") ||
+    url.includes(":completeCode") ||
+    url.includes(":streamCompleteCode") ||
+    url.includes(":suggestCode") ||
+    url.includes(":streamSuggestCode") ||
+    url.includes(":inlineCode") ||
+    url.includes(":streamInlineCode") ||
     url.includes(":predict") ||
     url.includes(":streamPredict") ||
     url.includes("/models/")
@@ -21,11 +29,44 @@ function isStreamingEndpoint(urlPath) {
   return urlPath.toLowerCase().includes("stream") || isAiChatEndpoint(urlPath);
 }
 
-function extractModelName(urlPath, parsedBody) {
-  if (parsedBody && parsedBody.model) return String(parsedBody.model);
-  if (!urlPath) return "unknown";
-  const match = urlPath.match(/models\/([^/:]+)/);
-  return match ? match[1] : "gemini-pro";
+function extractModelName(urlPath, body) {
+  let json = null;
+  if (body) {
+    if (Buffer.isBuffer(body)) {
+      try {
+        json = JSON.parse(body.toString("utf8"));
+      } catch (_) {}
+    } else if (typeof body === "object") {
+      json = body;
+    }
+  }
+
+  if (json) {
+    if (json.model && typeof json.model === "string") {
+      return json.model.replace(/^models\//, "").split(":")[0];
+    }
+    if (json.metadata && typeof json.metadata === "object") {
+      if (typeof json.metadata.model === "string") {
+        return json.metadata.model.replace(/^models\//, "").split(":")[0];
+      }
+      if (typeof json.metadata.modelName === "string") {
+        return json.metadata.modelName.replace(/^models\//, "").split(":")[0];
+      }
+    }
+    if (Array.isArray(json.requests) && json.requests[0] && json.requests[0].model) {
+      return String(json.requests[0].model).replace(/^models\//, "").split(":")[0];
+    }
+    if (json.request && json.request.model) {
+      return String(json.request.model).replace(/^models\//, "").split(":")[0];
+    }
+  }
+
+  if (urlPath) {
+    const match = urlPath.match(/models\/([^/:]+)/);
+    if (match) return match[1];
+  }
+
+  return "";
 }
 
 function rewriteChatPayload(bodyBuffer, account, host = "") {

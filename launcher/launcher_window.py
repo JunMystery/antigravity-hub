@@ -15,7 +15,7 @@ from PyQt6.QtGui import QIcon
 
 from launcher_storage import (
     load_data, save_data, APP_ICON, delete_account_completely,
-    get_app_binary, get_ide_binary
+    get_app_binary, get_ide_binary, PROFILES_BASE_DIR
 )
 from launcher_i18n import tr, set_language
 from launcher_layout import apply_launcher_style
@@ -37,7 +37,10 @@ from launcher_log_manager import prune_logs
 from launcher_sidebar import SidebarNav
 from launcher_view_dashboard import DashboardView
 from launcher_view_accounts import AccountsView
+from launcher_view_logs import LogsView
 from launcher_view_settings import SettingsView
+from launcher_tray import TrayManager, handle_hide_on_launch, handle_close_event, clean_exit
+from launcher_prompt_dialog import show_about_prompt
 
 class LauncherWindow(QMainWindow):
     """Cửa sổ điều phối chính Antigravity Launcher với Sidebar Navigation."""
@@ -51,6 +54,7 @@ class LauncherWindow(QMainWindow):
         set_language(self.data.get("settings", {}).get("language", "vi"))
         self.setWindowTitle(tr("app.title"))
         self.resize(840, 620)
+        self.setMinimumSize(760, 480)
         if APP_ICON and os.path.exists(APP_ICON):
             self.setWindowIcon(QIcon(APP_ICON))
 
@@ -66,12 +70,19 @@ class LauncherWindow(QMainWindow):
         self.stack = QStackedWidget(self)
         self.view_dashboard = DashboardView(self)
         self.view_accounts = AccountsView(self)
+        self.view_logs = LogsView(self)
         self.view_settings = SettingsView(self)
         self.stack.addWidget(self.view_dashboard)
         self.stack.addWidget(self.view_accounts)
+        self.stack.addWidget(self.view_logs)
         self.stack.addWidget(self.view_settings)
 
-        self.view_map = {"dashboard": self.view_dashboard, "accounts": self.view_accounts, "settings": self.view_settings}
+        self.view_map = {
+            "dashboard": self.view_dashboard,
+            "accounts": self.view_accounts,
+            "logs": self.view_logs,
+            "settings": self.view_settings
+        }
         self.sidebar.view_changed.connect(self.switch_view)
         root_layout.addWidget(self.stack, 1)
 
@@ -81,6 +92,7 @@ class LauncherWindow(QMainWindow):
         self.btn_next = self.view_dashboard.btn_next
         self.btn_toggle_proxy = self.view_dashboard.btn_toggle_proxy
         self.combo_lang = self.sidebar.combo_lang
+        self.tray = TrayManager(self)
 
         self._refresh_list()
         self.update_live_monitor()
@@ -108,6 +120,8 @@ class LauncherWindow(QMainWindow):
     def switch_view(self, view_id: str):
         target = self.view_map.get(view_id)
         if target:
+            if view_id == "logs" and hasattr(target, "load_logs"):
+                target.load_logs()
             self.stack.setCurrentWidget(target)
             self.sidebar.set_active_view(view_id)
 
@@ -125,14 +139,18 @@ class LauncherWindow(QMainWindow):
         self.view_accounts.retranslate_ui()
         if hasattr(self, "view_dashboard"):
             self.view_dashboard.retranslate_ui()
+        if hasattr(self, "view_logs"):
+            self.view_logs.retranslate_ui()
         if hasattr(self, "view_settings"):
             self.view_settings.retranslate_ui()
+        if hasattr(self, "tray"):
+            self.tray.retranslate_ui()
         self._refresh_list()
 
     def _refresh_list(self, select_id=None): populate_treeview(self, select_id=select_id)
     def _get_selected(self): return get_selected_profile(self)
-    def _update_row_quota(self, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid):
-        update_row_quota_display(self, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
+    def _update_row_quota(self, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid, q5_reset="", qw_reset=""):
+        update_row_quota_display(self, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid, q5_reset, qw_reset)
 
     def on_refresh_all_quota(self, widget=None): refresh_all_quota(self)
     def on_auto_quota_tick(self):
@@ -193,35 +211,32 @@ class LauncherWindow(QMainWindow):
             handle.requestActivate()
 
     def on_settings_clicked(self): self.switch_view("settings")
-    def on_launch_app_clicked(self): self._launch_target("app", self.btn_launch_app, tr("btn.launch_app"))
-    def on_launch_ide_clicked(self): self._launch_target("ide", self.btn_launch_ide, tr("btn.launch_ide"))
+    def on_launch_app_clicked(self): self._launch_target("app", getattr(self, "btn_launch_app", None), tr("btn.launch_app"))
+    def on_launch_ide_clicked(self): self._launch_target("ide", getattr(self, "btn_launch_ide", None), tr("btn.launch_ide"))
     def on_launch_clicked(self): self.on_launch_app_clicked()
 
     def _launch_target(self, target: str, button, default_text: str):
         sel = self._get_selected()
-        if not sel:
-            QMessageBox.warning(self, tr("msg.no_account_title"), tr("msg.no_account_desc"))
-            return
-        data_dir = sel.get("data_dir")
-        if not data_dir:
-            return
-        button.setEnabled(False)
-        button.setText(tr("msg.launching"))
+        profiles = self.data.get("profiles", [])
+        data_dir = sel.get("data_dir") if sel and sel.get("data_dir") else (profiles[0].get("data_dir") if profiles and profiles[0].get("data_dir") else os.path.join(PROFILES_BASE_DIR, "default"))
+        if button:
+            button.setEnabled(False)
+            button.setText(tr("msg.launching"))
         def restore_btn():
-            button.setEnabled(True)
-            button.setText(default_text)
+            if button:
+                button.setEnabled(True)
+                button.setText(default_text)
         if launch_profile(data_dir, target=target, use_proxy=True):
             QTimer.singleShot(1500, restore_btn)
+            QTimer.singleShot(50, lambda: handle_hide_on_launch(self))
         else:
             restore_btn()
             label = "Antigravity App (2.0)" if target == "app" else "Antigravity IDE"
             QMessageBox.critical(self, tr("msg.launch_error_title"), tr("msg.launch_error_desc").format(target=label))
 
-    def closeEvent(self, event):
-        self.monitor_timer.stop()
-        self.auto_quota_timer.stop()
-        stop_spinner_animation(self)
-        event.accept()
+    def closeEvent(self, event): handle_close_event(self, event)
+    def exit_app(self): clean_exit(self)
+    def show_about(self): show_about_prompt(self)
 
 def run_gui():
     from launcher_single_instance import check_single_instance, setup_single_instance_listener

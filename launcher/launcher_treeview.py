@@ -8,12 +8,13 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QWidget,
     QHBoxLayout, QPushButton, QAbstractItemView
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QColor
 
 from launcher_i18n import tr
 from launcher_quota_runner import refresh_single_row_quota
 from launcher_order_widget import OrderCellWidget
+from launcher_quota_widget import QuotaCellWidget
 from launcher_toggle_switch import ToggleSwitch
 
 from launcher_treeview_updater import (
@@ -43,13 +44,20 @@ def setup_treeview(win):
         tr("col.5h"), tr("col.weekly"), tr("col.quota")
     ])
     hdr = table.horizontalHeader()
-    for col in range(6):
-        hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Stretch if col == 2 else QHeaderView.ResizeMode.ResizeToContents)
+    hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+    table.setColumnWidth(0, 68)
+    hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+    hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+    hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+    table.setColumnWidth(3, 115)
+    hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+    table.setColumnWidth(4, 115)
+    hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
     table.verticalHeader().setVisible(False)
-    table.verticalHeader().setDefaultSectionSize(42)
+    table.verticalHeader().setDefaultSectionSize(46)
     table.setShowGrid(True)
 
     win.table_container.addWidget(table, 1)
@@ -110,6 +118,7 @@ def populate_treeview(win, select_id=None):
             # 0: Order (Cell Widget với Micro-Stepper ▲/▼)
             item_order = QTableWidgetItem()
             item_order.setData(Qt.ItemDataRole.UserRole, pid)
+            item_order.setSizeHint(QSize(68, 24))
             table.setItem(row_idx, 0, item_order)
 
             is_first = (row_idx == 0)
@@ -142,23 +151,21 @@ def populate_treeview(win, select_id=None):
             item_email.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
             table.setItem(row_idx, 2, item_email)
 
-            # 3: 5h Quota (Chỉ đọc)
+            # 3: 5h Quota (Thanh Gradient + % trắng + Reset in HH:MM)
             q5_text = p.get("quota_5h") or tr("quota.not_scanned")
-            item_q5 = QTableWidgetItem(q5_text)
-            item_q5.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            cq5 = get_quota_color(p.get("quota_5h_val", 0), p.get("quota_5h_valid", False))
-            item_q5.setForeground(QColor(cq5))
-            item_q5.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            table.setItem(row_idx, 3, item_q5)
+            q5_val = p.get("quota_5h_val", 0)
+            q5_valid = p.get("quota_5h_valid", False)
+            q5_reset = p.get("quota_5h_reset", "")
+            cell_q5 = QuotaCellWidget(q5_val, q5_text, q5_valid, q5_reset, parent=table)
+            table.setCellWidget(row_idx, 3, cell_q5)
 
-            # 4: Weekly Quota (Chỉ đọc)
+            # 4: Weekly Quota (Thanh Gradient + % trắng + Reset in HH:MM / Xd Yh)
             qw_text = p.get("quota_weekly") or tr("quota.not_scanned")
-            item_qw = QTableWidgetItem(qw_text)
-            item_qw.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            cw = get_quota_color(p.get("quota_weekly_val", 0), p.get("quota_weekly_valid", False))
-            item_qw.setForeground(QColor(cw))
-            item_qw.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
-            table.setItem(row_idx, 4, item_qw)
+            qw_val = p.get("quota_weekly_val", 0)
+            qw_valid = p.get("quota_weekly_valid", False)
+            qw_reset = p.get("quota_weekly_reset", "")
+            cell_qw = QuotaCellWidget(qw_val, qw_text, qw_valid, qw_reset, parent=table)
+            table.setCellWidget(row_idx, 4, cell_qw)
 
             # 5: Single Refresh Button
             btn_row_ref = QPushButton("⟳")

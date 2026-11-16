@@ -5,6 +5,18 @@
  * Passthrough startup, Priority-based Round Robin, Instant Failover & auto-retry on 401.
  */
 
+function getTimestampPrefix() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `[${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}]`;
+}
+const _origLog = console.log;
+const _origWarn = console.warn;
+const _origError = console.error;
+console.log = (...args) => _origLog(getTimestampPrefix(), ...args);
+console.warn = (...args) => _origWarn(getTimestampPrefix(), ...args);
+console.error = (...args) => _origError(getTimestampPrefix(), ...args);
+
 const http = require("node:http");
 const https = require("node:https");
 const net = require("node:net");
@@ -14,6 +26,7 @@ const os = require("node:os");
 
 const { createLeafCertificate } = require("./cert_provider");
 const { isAiChatEndpoint, executeGoogleChatRequest } = require("./chat_handler");
+const { extractModelName } = require("./chat_payload_helper");
 const { handleOAuthRoute } = require("./oauth_handler");
 const { AccountRotator } = require("./account_rotator");
 const { agentPool } = require("./agent_pool");
@@ -62,8 +75,8 @@ function getRequestContext(sessionId = null, isSubagent = false) {
     config: CONFIG, sessionId, isSubagent,
     get accounts() { return rotator.accounts; },
     getCurrentAccount: () => rotator.getCurrentAccount(),
-    nextAccount: (sId = null, isFail = false, isSub = false) =>
-      rotator.nextAccount(sId || sessionId, isFail, isSub !== undefined ? isSub : isSubagent),
+    nextAccount: (sId = null, isFail = false, isSub = false, failedAcc = null) =>
+      rotator.nextAccount(sId || sessionId, isFail, isSub !== undefined ? isSub : isSubagent, failedAcc),
     get accountIndex() { return rotator.accountIndex; },
     get currentAccRequestsServed() { return rotator.currentAccRequestsServed; },
     get requestsPerAccount() { return rotator.requestsPerAccount; },
@@ -152,8 +165,10 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
     const reqNum = allocation.requestNumber;
     const tag = isSub ? "[SUBAGENT]" : "[MAIN]";
     const stickyFlag = allocation.isSticky ? "[STICKY] " : (allocation.isNewSubagent ? "[NEW-SUB] " : "");
+    const modelName = extractModelName(reqUrl, bodyBuffer);
+    const modelTag = modelName ? `[MODEL: ${modelName}] ` : "";
 
-    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${req.method} ${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
+    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${req.method} ${modelTag}${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
 
     writeLiveStatus({
       active: true, timestamp: Date.now(), account_email: accName,

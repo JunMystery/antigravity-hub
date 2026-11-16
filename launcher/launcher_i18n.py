@@ -20,7 +20,7 @@ _CURRENT_LANG = "vi"
 # Fallback nhúng an toàn phòng khi tệp JSON bị xóa hoặc lỗi truy cập
 _FALLBACK_DEFAULTS = {
     "vi": {
-        "app.title": "Antigravity Profile Launcher",
+        "app.title": "Antigravity Hub",
         "app.subtitle": "Quản lý Profile & Quota",
         "btn.add": "_Thêm",
         "btn.delete": "_Xóa",
@@ -52,7 +52,7 @@ _FALLBACK_DEFAULTS = {
         "dialog.deleted_msg": "<b><span color='#e74c3c'>[ĐÃ XÓA]</span></b> Đã xóa hoàn toàn tài khoản <b>{label}</b> và dữ liệu."
     },
     "en": {
-        "app.title": "Antigravity Profile Launcher",
+        "app.title": "Antigravity Hub",
         "app.subtitle": "Profile & Quota Manager",
         "btn.add": "_Add",
         "btn.delete": "_Delete",

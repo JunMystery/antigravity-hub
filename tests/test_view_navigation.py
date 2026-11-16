@@ -34,8 +34,12 @@ class TestViewNavigation(unittest.TestCase):
         sidebar.buttons["accounts"].click()
         self.assertIn("accounts", received_views)
         self.assertTrue(sidebar.buttons["accounts"].view_id == "accounts")
+        self.assertIsNotNone(sidebar.lbl_footer)
+        self.assertIn("v0.1.1", sidebar.lbl_footer.text())
+        self.assertIn("JunMystery", sidebar.lbl_footer.text())
         self.assertIn(sidebar.buttons["dashboard"].text(), ["Dashboard", "Tổng quan"])
         self.assertIn(sidebar.buttons["accounts"].text(), ["Accounts", "Tài khoản"])
+        self.assertIn(sidebar.buttons["logs"].text(), ["Logs", "Nhật ký"])
         self.assertIn(sidebar.buttons["settings"].text(), ["Settings", "Cài đặt"])
 
     def test_window_stacked_view_switching(self):
@@ -45,6 +49,9 @@ class TestViewNavigation(unittest.TestCase):
 
         self.win.switch_view("accounts")
         self.assertEqual(self.win.stack.currentWidget(), self.win.view_accounts)
+
+        self.win.switch_view("logs")
+        self.assertEqual(self.win.stack.currentWidget(), self.win.view_logs)
 
         self.win.switch_view("settings")
         self.assertEqual(self.win.stack.currentWidget(), self.win.view_settings)
@@ -173,6 +180,7 @@ class TestViewNavigation(unittest.TestCase):
         self.assertEqual(self.win.view_settings.btn_clear_log.text(), "Clear Log")
         self.assertEqual(self.win.view_settings.grp_logs.title(), "Log Management & Retention")
         self.assertEqual(self.win.sidebar.buttons["accounts"].text(), "Accounts")
+        self.assertEqual(self.win.sidebar.buttons["logs"].text(), "Logs")
         self.assertEqual(self.win.sidebar.buttons["settings"].text(), "Settings")
 
         set_language("vi")
@@ -188,7 +196,38 @@ class TestViewNavigation(unittest.TestCase):
         self.assertEqual(self.win.view_settings.btn_clear_log.text(), "Xóa Log")
         self.assertEqual(self.win.view_settings.grp_logs.title(), "Quản lý & Lưu trữ Nhật ký")
         self.assertEqual(self.win.sidebar.buttons["accounts"].text(), "Tài khoản")
+        self.assertEqual(self.win.sidebar.buttons["logs"].text(), "Nhật ký")
         self.assertEqual(self.win.sidebar.buttons["settings"].text(), "Cài đặt")
+
+    def test_logs_view_features(self):
+        """Xác nhận LogsView có bảng 5 cột, toolbar và hỗ trợ lọc tìm kiếm."""
+        from launcher_token_delegate import TokenInOutDelegate
+        logs_view = self.win.view_logs
+        self.assertIsNotNone(logs_view)
+        self.assertEqual(logs_view.table.columnCount(), 5)
+        self.assertEqual(logs_view.table.horizontalHeaderItem(2).text(), "Model")
+        self.assertIsInstance(logs_view.table.itemDelegateForColumn(4), TokenInOutDelegate)
+        self.assertIsNotNone(logs_view.txt_search)
+        self.assertIsNotNone(logs_view.btn_refresh)
+        self.assertIsNotNone(logs_view.btn_open_file)
+        self.assertIsNotNone(logs_view.btn_copy)
+        self.assertIsNotNone(logs_view.btn_clear)
+
+        # Kiểm tra nạp dữ liệu mẫu bao gồm cả sự kiện hệ thống
+        logs_view._entries = [
+            {"time": "12:00:01", "thread": "MAIN", "action": "POST streamGenerateContent", "acc": "user@gmail.com", "tokens": "1.8K / 420"},
+            {"time": "12:00:02", "thread": "SUBAGENT", "action": "GET models", "acc": "sub@gmail.com", "tokens": "-- / --"},
+            {"time": "12:00:03", "thread": "MAIN", "action": "Client Abort", "acc": "user@gmail.com", "tokens": "--"},
+            {"time": "12:00:04", "thread": "MAIN", "action": "Rotator Restore", "acc": "user@gmail.com", "tokens": "--"}
+        ]
+        logs_view._populate_table()
+        self.assertEqual(logs_view.table.rowCount(), 4)
+
+        # Lọc tìm kiếm
+        logs_view.txt_search.setText("SUBAGENT")
+        self.assertEqual(logs_view.table.rowCount(), 1)
+        logs_view.txt_search.setText("")
+        self.assertEqual(logs_view.table.rowCount(), 4)
 
 if __name__ == "__main__":
     unittest.main()

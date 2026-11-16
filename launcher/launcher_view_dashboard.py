@@ -8,7 +8,7 @@ và luồng nhật ký hoạt động tinh gọn 1 bảng (ActivityLogsPanel).
 import os
 import json
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QLabel
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QLabel, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 
@@ -17,6 +17,7 @@ from launcher_i18n import tr
 from launcher_proxy import is_proxy_running
 from launcher_widget import CompactStatusBar
 from launcher_activity_widget import ActivityLogsPanel
+from launcher_token_widget import TokenMetricsBar
 
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 
@@ -52,6 +53,7 @@ class DashboardView(QWidget):
 
         # 1. Thanh tóm tắt trạng thái liền khối (Compact Inline Bar)
         self.status_bar = CompactStatusBar(self)
+        self.status_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         layout.addWidget(self.status_bar)
 
         # Thuộc tính tương thích ngược
@@ -104,8 +106,14 @@ class DashboardView(QWidget):
         act_box.addLayout(proxy_group, 2)
         layout.addLayout(act_box)
 
-        # 3. Phân vùng luồng hoạt động tinh gọn
+        # 3. Thẻ thống kê Token (Token Metrics Bar)
+        self.token_bar = TokenMetricsBar(self)
+        self.token_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        layout.addWidget(self.token_bar)
+
+        # 4. Phân vùng luồng hoạt động tinh gọn
         self.activity_panel = ActivityLogsPanel(self)
+        self.activity_panel.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         layout.addWidget(self.activity_panel, 1)
 
         # Thuộc tính tương thích ngược cho tests và launcher window
@@ -127,6 +135,8 @@ class DashboardView(QWidget):
         self.card_acc.lbl_title.setText(tr("monitor.col_acc"))
         self.card_turn.lbl_title.setText(tr("monitor.col_turn"))
         self.card_total.lbl_title.setText(tr("monitor.col_total"))
+        if hasattr(self, "token_bar"):
+            self.token_bar.retranslate_ui()
         if hasattr(self, "activity_panel"):
             self.activity_panel.retranslate_ui()
 
@@ -135,6 +145,9 @@ class DashboardView(QWidget):
         status_lbl = tr("monitor.col_status") or "Trạng thái"
         acc_lbl = tr("monitor.col_acc") or "Tài khoản"
         turn_lbl = tr("monitor.col_turn") or "Lượt"
+
+        if hasattr(self, "token_bar"):
+            self.token_bar.refresh_metrics()
 
         if not is_proxy_running():
             self.status_bar.set_state("● STOPPED", "#f38ba8", "", tr("monitor.acc_unavailable"), "--", turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl)

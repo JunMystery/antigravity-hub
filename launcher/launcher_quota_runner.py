@@ -16,7 +16,7 @@ from launcher_quota_fetcher import fetch_single_account_quota
 class QuotaSignalBridge(QObject):
     """Cầu nối tín hiệu Qt truyền kết quả từ Worker thread sang Main GUI thread."""
     all_done_signal = pyqtSignal(list, int)
-    single_done_signal = pyqtSignal(str, int, str, bool, int, str, bool)
+    single_done_signal = pyqtSignal(str, int, str, bool, str, int, str, bool, str)
     error_signal = pyqtSignal()
 
 def ensure_bridge(win) -> QuotaSignalBridge:
@@ -24,7 +24,10 @@ def ensure_bridge(win) -> QuotaSignalBridge:
     if not hasattr(win, "quota_bridge") or win.quota_bridge is None:
         bridge = QuotaSignalBridge()
         bridge.all_done_signal.connect(lambda results, now: handle_all_done(win, results, now))
-        bridge.single_done_signal.connect(lambda pid, q5_v, q5_t, q5_ok, qw_v, qw_t, qw_ok: handle_single_done(win, pid, q5_v, q5_t, q5_ok, qw_v, qw_t, qw_ok))
+        bridge.single_done_signal.connect(
+            lambda pid, q5_v, q5_t, q5_ok, q5_r, qw_v, qw_t, qw_ok, qw_r:
+            handle_single_done(win, pid, q5_v, q5_t, q5_ok, q5_r, qw_v, qw_t, qw_ok, qw_r)
+        )
         bridge.error_signal.connect(lambda: handle_error(win))
         win.quota_bridge = bridge
     return win.quota_bridge
@@ -62,12 +65,18 @@ def handle_all_done(win, results, now):
     if hasattr(win, "refreshing_profile_ids"):
         win.refreshing_profile_ids.clear()
 
-    for pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid in results:
-        win._update_row_quota(pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
+    for item in results:
+        if len(item) == 9:
+            pid, q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset = item
+        else:
+            pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = item[:7]
+            q5_reset, qw_reset = "", ""
+
+        win._update_row_quota(pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid, q5_reset, qw_reset)
         for p in win.data.get("profiles", []):
             if p.get("id") == pid:
-                p["quota_5h_val"], p["quota_5h"], p["quota_5h_valid"] = q5_val, q5_text, q5_valid
-                p["quota_weekly_val"], p["quota_weekly"], p["quota_weekly_valid"] = qw_val, qw_text, qw_valid
+                p["quota_5h_val"], p["quota_5h"], p["quota_5h_valid"], p["quota_5h_reset"] = q5_val, q5_text, q5_valid, q5_reset
+                p["quota_weekly_val"], p["quota_weekly"], p["quota_weekly_valid"], p["quota_weekly_reset"] = qw_val, qw_text, qw_valid, qw_reset
                 p["quota_timestamp"] = now
                 break
     save_data(win.data)
@@ -79,19 +88,19 @@ def handle_all_done(win, results, now):
 
     start_refresh_cooldown(win, MANUAL_COOLDOWN)
 
-def handle_single_done(win, pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid):
+def handle_single_done(win, pid, q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset):
     """Xử lý cập nhật riêng lẻ Quota của một tài khoản trên Main GUI Thread."""
     if hasattr(win, "refreshing_profile_ids"):
         win.refreshing_profile_ids.discard(pid)
         if not win.refreshing_profile_ids and not getattr(win, "is_refreshing_quota", False):
             stop_spinner_animation(win)
 
-    win._update_row_quota(pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
+    win._update_row_quota(pid, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid, q5_reset, qw_reset)
     prof_email = ""
     for p in win.data.get("profiles", []):
         if p.get("id") == pid:
-            p["quota_5h_val"], p["quota_5h"], p["quota_5h_valid"] = q5_val, q5_text, q5_valid
-            p["quota_weekly_val"], p["quota_weekly"], p["quota_weekly_valid"] = qw_val, qw_text, qw_valid
+            p["quota_5h_val"], p["quota_5h"], p["quota_5h_valid"], p["quota_5h_reset"] = q5_val, q5_text, q5_valid, q5_reset
+            p["quota_weekly_val"], p["quota_weekly"], p["quota_weekly_valid"], p["quota_weekly_reset"] = qw_val, qw_text, qw_valid, qw_reset
             p["quota_timestamp"] = int(time.time())
             prof_email = p.get("name") or p.get("email") or pid
             break
@@ -159,12 +168,17 @@ def refresh_single_row_quota(win, prof_id):
             target_email = (prof_email or "").lower()
             matched_acc = next((a for a in accs if a.get("email", "").lower() == target_email or a.get("name", "").lower() == target_email or a.get("id") == prof_id), None)
             if matched_acc:
-                q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = fetch_single_account_quota(matched_acc, force=True, cached_info=prof)
+                res = fetch_single_account_quota(matched_acc, force=True, cached_info=prof)
+                if len(res) == 8:
+                    q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset = res
+                else:
+                    q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = res
+                    q5_reset, qw_reset = "", ""
             else:
                 no_match = tr("quota.no_match")
-                q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, no_match, False, 0, no_match, False
+                q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset = 0, no_match, False, "", 0, no_match, False, ""
             try:
-                bridge.single_done_signal.emit(prof_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid)
+                bridge.single_done_signal.emit(prof_id, q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset)
             except (RuntimeError, Exception):
                 pass
         except Exception:
@@ -210,11 +224,16 @@ def refresh_all_quota(win, widget=None):
                 if not acc:
                     acc = next((a for a in accs if a.get("id") == p.get("id")), None)
                 if acc:
-                    q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = fetch_single_account_quota(acc, force=True, cached_info=p)
+                    res = fetch_single_account_quota(acc, force=True, cached_info=p)
+                    if len(res) == 8:
+                        q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset = res
+                    else:
+                        q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = res
+                        q5_reset, qw_reset = "", ""
                 else:
                     no_match = tr("quota.no_match")
-                    q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, no_match, False, 0, no_match, False
-                return p["id"], q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid
+                    q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset = 0, no_match, False, "", 0, no_match, False, ""
+                return p["id"], q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
                 results = list(executor.map(query_profile, profiles))

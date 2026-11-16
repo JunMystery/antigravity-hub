@@ -20,6 +20,7 @@ class SidebarNav(QWidget):
     NAV_ICONS = {
         "dashboard": "⊞",
         "accounts": "👤",
+        "logs": "≡",
         "settings": "⚙"
     }
 
@@ -65,6 +66,7 @@ class SidebarNav(QWidget):
         nav_items = [
             ("dashboard", tr("nav.dashboard")),
             ("accounts", tr("nav.accounts")),
+            ("logs", tr("nav.logs")),
             ("settings", tr("nav.settings"))
         ]
 
@@ -91,6 +93,12 @@ class SidebarNav(QWidget):
         self.combo_lang.currentIndexChanged.connect(self.win.on_language_changed)
         layout.addWidget(self.combo_lang)
 
+        layout.addSpacing(10)
+        self.lbl_footer = QLabel("v0.1.1 • JunMystery")
+        self.lbl_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_footer.setStyleSheet("color: #6c7086; font-size: 10px; font-weight: 500;")
+        layout.addWidget(self.lbl_footer)
+
         self.set_active_view("dashboard")
 
     def _on_btn_clicked(self, view_id: str):
@@ -108,6 +116,6 @@ class SidebarNav(QWidget):
             self.combo_lang.blockSignals(True)
             self.combo_lang.setCurrentIndex(idx)
             self.combo_lang.blockSignals(False)
-        for vid in ("dashboard", "accounts", "settings"):
+        for vid in ("dashboard", "accounts", "logs", "settings"):
             if vid in self.buttons:
                 self.buttons[vid].setText(tr(f"nav.{vid}"))
