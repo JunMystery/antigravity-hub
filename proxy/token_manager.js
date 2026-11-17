@@ -1,5 +1,4 @@
 const fs = require("node:fs");
-const { encryptToken, decryptToken } = require("./crypto_helper");
 
 const refreshPromises = new Map();
 
@@ -28,9 +27,9 @@ function persistAccountToken(account, accountsFile) {
       const matchId = a.id && a.id === account.id;
       const matchEmail = a.email && a.email.toLowerCase() === (account.email || "").toLowerCase();
       if (matchId || matchEmail) {
-        a.accessToken = encryptToken(account.accessToken);
+        a.accessToken = account.accessToken;
         if (account.refreshToken) {
-          a.refreshToken = encryptToken(account.refreshToken);
+          a.refreshToken = account.refreshToken;
         }
         a.expiresAt = new Date(account.expiresAt).toISOString();
         found = true;
@@ -39,7 +38,7 @@ function persistAccountToken(account, accountsFile) {
     }
     if (found) {
       fs.writeFileSync(accountsFile, JSON.stringify(raw, null, 2), { encoding: "utf8", mode: 0o600 });
-      console.log(`[AUTH-PERSIST] [SAVE] Đã mã hóa và lưu Access Token mới cho [${account.email}] vào accounts.json`);
+      console.log(`[AUTH-PERSIST] [SAVE] Đã lưu Access Token mới cho [${account.email}] vào accounts.json`);
     }
   } catch (err) {
     console.error(`[AUTH-PERSIST-ERR] Lỗi ghi accounts.json: ${err.message}`);
@@ -59,7 +58,7 @@ async function refreshGoogleAccessToken(account, config) {
 
   const refreshPromise = (async () => {
     try {
-      const plainRefreshToken = decryptToken(account.refreshToken);
+      const plainRefreshToken = account.refreshToken;
       const res = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -124,9 +123,6 @@ async function ensureValidToken(account, config) {
   const expiresMs = getExpiresAtEpoch(account.expiresAt);
   if (!account.accessToken || expiresMs - Date.now() < 5 * 60 * 1000) {
     await refreshGoogleAccessToken(account, config);
-  }
-  if (account.accessToken && account.accessToken.startsWith("enc:")) {
-    account.accessToken = decryptToken(account.accessToken);
   }
   return account.accessToken;
 }

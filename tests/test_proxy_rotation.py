@@ -147,6 +147,39 @@ class TestProxyRoundRobinRotation(unittest.TestCase):
         self.assertEqual(output["failover"], "acc1@test.com")
         self.assertEqual(output["req2"], "acc2@test.com")
 
+    def test_timeout_failover_cooldown_and_skip(self):
+        """Kiem tra khi account bi timeout socket/TTFB, account duoc danh dau unhealthy va rotator tu dong bo qua."""
+        code = """
+        const { AccountRotator } = require("./proxy/account_rotator");
+        const rotator = new AccountRotator({});
+        rotator.accounts = [
+          { id: "acc-0", email: "acc0@test.com" },
+          { id: "acc-1", email: "acc1@test.com" }
+        ];
+        rotator.requestsPerAccount = 2;
+
+        const req1 = rotator.allocateAccountForRequest();
+        // Gia lap upstream timeout tai 42s danh dau unhealthy 60s
+        req1.account.unhealthyUntil = Date.now() + 60000;
+        const failoverAcc = rotator.nextAccount(null, true, false, req1.account);
+
+        // Cac request tiep theo phai phuc vu boi acc-1 vi acc-0 dang trong cooldown
+        const req2 = rotator.allocateAccountForRequest();
+        const req3 = rotator.allocateAccountForRequest();
+
+        console.log(JSON.stringify({
+          initial: req1.account.email,
+          failover: failoverAcc.email,
+          subsequent1: req2.account.email,
+          subsequent2: req3.account.email
+        }));
+        """
+        output = json.loads(run_node(code))
+        self.assertEqual(output["initial"], "acc0@test.com")
+        self.assertEqual(output["failover"], "acc1@test.com")
+        self.assertEqual(output["subsequent1"], "acc1@test.com")
+        self.assertEqual(output["subsequent2"], "acc1@test.com")
+
 class TestPayloadRewriteAndLegacyRequests(unittest.TestCase):
     """Kiem tra rewrite payload hop chuan Google Cloud Code va bao toan project id khi rotate."""
 

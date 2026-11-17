@@ -6,10 +6,15 @@ live_status.json
 proxy_cmd.json
 launched_apps.json
 token_metrics.json
-.master_key
+.master_key*
 *.pid
 *.sqlite
 *.db
+*.zip
+*.tar.gz
+*.tgz
+backup_manifest.json
+*.bak
 
 # Thư mục cấu hình và dữ liệu profiles
 Antigravity-Profiles/

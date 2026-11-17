@@ -231,6 +231,23 @@ class AccountRotator {
 
   handleCommand(cmd, httpRes, writeLiveStatus) {
     console.log(`[PROXY-CMD] [CMD] Nhan lenh tu Launcher: ${cmd}`);
+    if (cmd === "reload") {
+      this.accounts.forEach((a) => { a.unhealthyUntil = 0; });
+      this.loadState();
+      const cur = this.getCurrentAccount();
+      writeLiveStatus({
+        active: false, timestamp: Date.now(), account_email: cur?.email || "San sang",
+        account_name: cur?.name || cur?.email || "San sang", current_req: this.currentAccRequestsServed,
+        requests_per_account: this.requestsPerAccount, total_requests: this.requestCount,
+        endpoint: "reload", method: "RELOAD", status: this.rotationPaused ? "paused" : "standby",
+        paused: this.rotationPaused
+      });
+      if (httpRes) {
+        httpRes.writeHead(200, { "Content-Type": "application/json" });
+        httpRes.end(JSON.stringify({ success: true, count: this.accounts.length }));
+      }
+      return;
+    }
     this.loadState();
 
     if (cmd === "next") {

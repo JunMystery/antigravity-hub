@@ -20,9 +20,6 @@ from launcher_paths import (
     get_app_binary, get_ide_binary, find_app_icon, get_proxy_script_path,
     get_root_ca_path, get_certificate_spki_fingerprint
 )
-from launcher_crypto import (
-    encrypt_token, decrypt_token, encrypt_account_tokens, decrypt_account_tokens
-)
 
 def slugify(text: str) -> str:
     text = text.lower().strip()
@@ -95,13 +92,12 @@ def load_accounts() -> list:
     try:
         with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
             raw_accs = json.load(f).get("accounts", [])
-            return [decrypt_account_tokens(a) for a in raw_accs]
+            return [a for a in raw_accs if isinstance(a, dict)]
     except Exception:
         return []
 
 def save_accounts(accounts: list) -> None:
-    enc_accs = [encrypt_account_tokens(a) for a in accounts]
-    _secure_write(ACCOUNTS_FILE, {"accounts": enc_accs})
+    _secure_write(ACCOUNTS_FILE, {"accounts": accounts})
 
 def delete_account_completely(profile: dict) -> dict:
     """Xóa triệt để profile, token và thư mục dữ liệu trên đĩa."""

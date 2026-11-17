@@ -94,7 +94,7 @@ class SidebarNav(QWidget):
         layout.addWidget(self.combo_lang)
 
         layout.addSpacing(10)
-        self.lbl_footer = QLabel("v0.1.2 • JunMystery")
+        self.lbl_footer = QLabel("v0.1.3 • JunMystery")
         self.lbl_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_footer.setStyleSheet("color: #6c7086; font-size: 10px; font-weight: 500;")
         layout.addWidget(self.lbl_footer)

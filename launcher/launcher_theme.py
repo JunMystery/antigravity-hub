@@ -196,6 +196,21 @@ QComboBox, QSpinBox {
     border-radius: 4px;
     padding: 4px 8px;
 }
+QLineEdit {
+    background-color: #181825;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 5px 10px;
+    min-height: 20px;
+}
+QLineEdit:focus {
+    border-color: #89b4fa;
+}
+QScrollArea, QWidget#settings_scroll_content {
+    background-color: #1e1e2e;
+    border: none;
+}
 QComboBox QAbstractItemView {
     background-color: #181825;
     color: #cdd6f4;
@@ -207,9 +222,16 @@ QComboBox QAbstractItemView {
 QGroupBox {
     border: 1px solid #45475a;
     border-radius: 6px;
-    margin-top: 8px;
-    padding-top: 10px;
+    margin-top: 12px;
+    padding-top: 14px;
     font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 10px;
+    padding: 0 6px;
+    color: #cdd6f4;
 }
 """
 

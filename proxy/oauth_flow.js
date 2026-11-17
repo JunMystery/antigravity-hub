@@ -1,7 +1,6 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { encryptToken } = require("./crypto_helper");
 
 const SCOPES = [
   "https://www.googleapis.com/auth/cloud-platform",
@@ -99,8 +98,8 @@ function saveAuthorizedAccount(accountData, { accountsFile, profilesFile, profil
     id: accId,
     email: accountData.email,
     name: accountData.name || accountData.email,
-    accessToken: encryptToken(accountData.accessToken),
-    refreshToken: encryptToken(accountData.refreshToken),
+    accessToken: accountData.accessToken,
+    refreshToken: accountData.refreshToken,
     expiresAt: new Date(accountData.expiresAt).toISOString(),
     projectId: accountData.projectId || "aicode-consumers"
   };

@@ -26,7 +26,9 @@ def main():
     parser.add_argument("--refresh-quota", action="store_true", help="Truy vấn và cập nhật Quota cho toàn bộ tài khoản")
     parser.add_argument("--create-shortcut", action="store_true", help="Tạo Desktop Shortcut cho Antigravity Launcher")
     parser.add_argument("--install-cert", action="store_true", help="Cài đặt chứng chỉ Root CA vào Trust Store của hệ điều hành")
-    parser.add_argument("--import-9router", action="store_true", help="Nhập danh sách tài khoản Google từ 9router SQLite")
+    parser.add_argument("--backup", nargs="?", const="", metavar="PATH", help="Sao lưu tài khoản và cài đặt thành file .zip")
+    parser.add_argument("--restore", metavar="PATH", help="Phục hồi tài khoản và cài đặt từ file .zip")
+    parser.add_argument("--restore-mode", choices=["replace", "merge"], default="replace", help="Chế độ phục hồi: replace (ghi đè) hoặc merge (gộp)")
     parser.add_argument("--proxy", dest="proxy", action="store_true", default=None, help="Chạy kèm Round Robin Proxy")
     parser.add_argument("--no-proxy", dest="proxy", action="store_false", help="Chạy không Proxy (Direct)")
 
@@ -47,7 +49,9 @@ def main():
             sys.exit(1)
         return
 
-    if args.list or args.add or args.add_google or args.delete or args.launch or args.toggle or args.requests_per_account or args.start_proxy or args.stop_proxy or args.refresh_quota or args.import_9router:
+    if (args.list or args.add or args.add_google or args.delete or args.launch or
+        args.toggle or args.requests_per_account or args.start_proxy or args.stop_proxy or
+        args.refresh_quota or args.backup is not None or args.restore):
         run_cli(args)
     else:
         run_gui()

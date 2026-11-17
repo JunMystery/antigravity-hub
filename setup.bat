@@ -21,7 +21,7 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
-echo [1/5] Dang cai dat cac thu vien Python (PyQt6, requests, cryptography, keyring)...
+echo [1/4] Dang cai dat cac thu vien Python (PyQt6, requests, cryptography)...
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 if %errorlevel% neq 0 (
@@ -31,7 +31,7 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [2/5] Dang cai dat thu vien Node.js cho Micro-Proxy...
+echo [2/4] Dang cai dat thu vien Node.js cho Micro-Proxy...
 cd proxy
 call npm install
 cd ..
@@ -42,15 +42,11 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [3/5] Dang khoi tao va cai dat chung chi Root CA vao he thong...
+echo [3/4] Dang khoi tao va cai dat chung chi Root CA vao he thong...
 python launcher\main.py --install-cert
 
 echo.
-echo [4/5] Kiem tra va tu dong nhap tai khoan tu 9router (neu co)...
-python launcher\main.py --import-9router
-
-echo.
-echo [5/5] Dang tao Shortcut tren Desktop...
+echo [4/4] Dang tao Shortcut tren Desktop...
 python launcher\main.py --create-shortcut
 
 echo.

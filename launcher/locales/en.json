@@ -150,5 +150,21 @@
   "full_log.search_placeholder": "Search in logs...",
   "full_log.btn_refresh": "Refresh",
   "full_log.btn_copy": "Copy",
-  "full_log.copied": "Copied!"
+  "full_log.copied": "Copied!",
+  "settings.backup_group": "Backup & Restore",
+  "settings.backup_desc": "Backup account credentials and settings to a .zip archive for migration or disaster recovery.",
+  "btn.backup": "Backup Data",
+  "btn.restore": "Restore Data",
+  "backup.success": "Backup archive created successfully at:\n{path}",
+  "backup.failed": "Backup failed: {error}",
+  "backup.save_zip_title": "Save Antigravity Backup (.zip)",
+  "restore.confirm_mode_title": "Select Restore Mode",
+  "restore.confirm_mode_msg": "How would you like to restore data?\n\n• [Replace]: Wipe current profiles and replace with backup contents.\n• [Merge]: Keep current accounts and merge any new ones from backup.",
+  "restore.btn_replace": "Replace",
+  "restore.btn_merge": "Merge",
+  "restore.success": "Data restored successfully ({mode})!",
+  "restore.failed": "Restore failed: {error}",
+  "restore.invalid_zip": "Invalid zip file or missing account/profile data.",
+  "restore.incompatible_encryption": "This backup contains legacy machine-encrypted tokens (enc:v1/enc:v2) that cannot be used on a new system. Please re-export a plain backup from the original machine or re-add accounts.",
+  "restore.select_zip_title": "Select Antigravity Backup (.zip)"
 }

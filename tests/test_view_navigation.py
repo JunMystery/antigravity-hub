@@ -131,6 +131,23 @@ class TestViewNavigation(unittest.TestCase):
             settings.btn_open_data.click()
             mock_open.assert_called_once()
 
+    def test_settings_application_paths_row_height_not_squished(self):
+        """Xác nhận SettingsView bọc QScrollArea và hàng Application Paths giữ chiều cao >= 32px ở kích thước nhỏ nhất."""
+        from PyQt6.QtWidgets import QScrollArea
+        self.win.switch_view("settings")
+        self.win.resize(760, 480)
+        self.win.show()
+        app.processEvents()
+
+        settings = self.win.view_settings
+        self.assertIsInstance(settings.scroll_area, QScrollArea)
+        for widget in (
+            settings.txt_app, settings.btn_browse_app, settings.btn_detect_app,
+            settings.txt_ide, settings.btn_browse_ide, settings.btn_detect_ide
+        ):
+            self.assertGreaterEqual(widget.minimumHeight(), 32)
+            self.assertGreaterEqual(widget.height(), 32)
+
     def test_launch_buttons_retain_labels_after_restore(self):
         """Xác nhận nhãn nút không bị mất sau khi hoàn tất chu trình khởi chạy (không chứa emoji rác)."""
         from unittest.mock import patch

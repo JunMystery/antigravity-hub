@@ -1,7 +1,6 @@
 const https = require("node:https");
 const { ensureValidToken, refreshGoogleAccessToken } = require("./token_manager");
 const { getAgentForAccount } = require("./agent_pool");
-const { decryptToken } = require("./crypto_helper");
 const { sessionAffinity } = require("./session_affinity");
 const { destroyStream, attachClientCloseHandler } = require("./socket_cleanup");
 const { extractUsageMetadata, recordTokens, formatTokenCount } = require("./token_tracker");
@@ -40,9 +39,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
   if (!fwdHeaders["x-client-version"]) fwdHeaders["x-client-version"] = "2.24.0";
 
   if (account && account.accessToken) {
-    const plainToken = decryptToken(account.accessToken);
-    account.accessToken = plainToken;
-    fwdHeaders["authorization"] = `Bearer ${plainToken}`;
+    fwdHeaders["authorization"] = `Bearer ${account.accessToken}`;
   }
   // RFC 7230 §3.3.2 / RFC 9112 §6.1: Delete Transfer-Encoding when sending Content-Length
   delete fwdHeaders["transfer-encoding"];
@@ -51,7 +48,8 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     fwdHeaders["content-length"] = finalBodyBuffer.length;
   }
 
-  const TTFB_TIMEOUT_MS = 120000;      // 120s Time-To-First-Byte cho Extended Thinking
+  // 42s TTFB: chu dong failover truoc nguong timeout 60s cua client IDE
+  const TTFB_TIMEOUT_MS = 42000;
   const INACTIVITY_TIMEOUT_MS = 45000; // 45s sliding window giua cac data chunks
 
   const outgoingOptions = {
@@ -225,11 +223,21 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
 
   gReq.on("error", (e) => {
     clearAllTimeout();
-    console.error(`[UPSTREAM-ERR] Loi ket noi Google (${host}) tren [${accName}]:`, e.message);
     safeEndSession();
     if (activeGRes) destroyStream(activeGRes);
 
-    if (!isAborted && attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+    if (isAborted) {
+      console.log(`[CLIENT-CLOSED] Socket upstream bi huy do IDE da ngat ket noi truoc [${accName}]: ${e.message}`);
+      return;
+    }
+
+    console.error(`[UPSTREAM-ERR] Loi ket noi Google (${host}) tren [${accName}]:`, e.message);
+
+    if (account) {
+      account.unhealthyUntil = Date.now() + 60 * 1000;
+    }
+
+    if (attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
       const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
       console.warn(`[AUTO-FAILOVER-NET] [WARN] Loi socket (${e.message}). Doi sang ${nextAcc?.email}...`);
       executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1);

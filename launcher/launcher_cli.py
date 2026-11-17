@@ -22,15 +22,30 @@ from launcher_proxy import (
     is_proxy_running, stop_proxy, ensure_proxy_running, launch_profile
 )
 from launcher_quota_fetcher import fetch_single_account_quota
-from launcher_importer import import_accounts_from_9router
 
 def run_cli(args):
     """Điều hướng và thực thi các tham số dòng lệnh CLI."""
     data = load_data()
     profiles = data.get("profiles", [])
 
-    if getattr(args, "import_9router", False):
-        import_accounts_from_9router()
+    if args.backup is not None:
+        from launcher_backup import create_backup
+        target_path = args.backup if args.backup else None
+        ok, msg = create_backup(target_path)
+        if ok:
+            print(f"[OK] Đã tạo bản sao lưu thành công tại: {msg}")
+        else:
+            print(f"[ERROR] Sao lưu thất bại: {msg}", file=sys.stderr)
+        return
+
+    if args.restore:
+        from launcher_backup import restore_backup
+        mode = getattr(args, "restore_mode", "replace") or "replace"
+        ok, msg = restore_backup(args.restore, mode=mode)
+        if ok:
+            print(f"[OK] {msg}")
+        else:
+            print(f"[ERROR] {msg}", file=sys.stderr)
         return
 
     if getattr(args, "install_cert", False):

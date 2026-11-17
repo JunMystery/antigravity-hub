@@ -21,9 +21,10 @@ class AgentPool {
     if (!this.agents.has(key)) {
       const agent = new https.Agent({
         keepAlive: true,
-        keepAliveMsecs: 15000,
+        keepAliveMsecs: 10000,
+        maxFreeSockets: 5,
         maxSockets: 20,
-        timeout: 120000 // Extended Thinking models support (120s TTFB)
+        timeout: 120000
       });
       this.agents.set(key, agent);
     }

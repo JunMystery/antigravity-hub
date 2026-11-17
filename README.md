@@ -1,6 +1,6 @@
 # Antigravity Hub
 
-[![Version](https://img.shields.io/badge/Version-v0.1.2-blue.svg)](docs/changelogs/v0.1.2.md)
+[![Version](https://img.shields.io/badge/Version-v0.1.3-blue.svg)](docs/changelogs/v0.1.3.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 
@@ -92,7 +92,7 @@ Third-party AI gateways and multi-provider routers (such as **9Router** or comme
 | **Connection Path** | **Direct Local-to-Google** (`127.0.0.1` -> Google Frontend) | Through multi-provider translation pipeline |
 | **Bandwidth / Throughput** | **Unrestricted** (Direct local socket pool) | Subject to gateway processing overhead & provider limits |
 | **Extended Thinking Support** | **Yes** (Optimized 120s TTFB + 45s SSE sliding window) | Variable; often timeouts on prolonged thinking models |
-| **Credential Storage** | **Local AES-256-GCM Envelope Encryption** (OS Keyring) | Plaintext config files / environment variables |
+| **Credential Storage** | **Local Plain JSON (`0600`)** with Portable Cross-OS `.zip` Backup | Plaintext config files / SQLite |
 
 ---
 
@@ -107,8 +107,11 @@ python3 launcher/main.py --help
 # List accounts with status and quotas
 python3 launcher/main.py --list
 
-# Import accounts automatically from 9router
-python3 launcher/main.py --import-9router
+# Backup accounts and settings to a .zip archive
+python3 launcher/main.py --backup [optional_output_path]
+
+# Restore accounts and settings from a .zip archive (mode: replace | merge)
+python3 launcher/main.py --restore <backup_file.zip> [--restore-mode replace|merge]
 
 # Install and trust Root CA certificate in OS Trust Store
 python3 launcher/main.py --install-cert
@@ -133,7 +136,7 @@ python3 launcher/main.py --launch
 
 ## 🔒 Security & Privacy
 
-- **Hardware-Backed Encryption**: OAuth tokens are encrypted at rest using machine-bound **AES-256-GCM Envelope Encryption** integrated with OS Keyring (Windows Credential Manager / Linux Secret Service).
+- **Local Plain JSON Storage**: OAuth tokens are stored locally in plain JSON (`accounts.json` with owner-only `0600` permissions on Unix) for full cross-machine and cross-OS backup portability.
 - **Loopback Isolation**: Local micro-proxy TLS certificates are bound strictly to `127.0.0.1:20130`.
 - **Zero Data Collection**: No telemetry, analytics, or user prompts are ever collected or sent to external servers.
 
@@ -142,6 +145,7 @@ python3 launcher/main.py --launch
 ## 📜 Release Changelogs
 
 Detailed release notes and migration guides are documented in the [Changelogs Directory](./docs/changelogs/README.md):
+- [v0.1.3 Changelog](./docs/changelogs/v0.1.3.md): Universal plain-JSON Backup & Restore engine with cross-OS path remapping, removal of machine-bound encryption/keyring, 9Router importer decommission, and Settings View scroll/row-height GUI fixes.
 - [v0.1.2 Changelog](./docs/changelogs/v0.1.2.md): Automated Root CA & Combined Trust Bundle (`ca-bundle.crt`), 5-step automated installation pipeline, native 9router account migration, zero-freeze Windows UX optimizations, and auto-closing OAuth tabs.
 - [v0.1.1 Changelog](./docs/changelogs/v0.1.1.md): Token Metrics Bar (Sent/Received/Cached full numbers), Streamlined 3-column Activity Table, Model Extraction, Dedicated Sidebar Logs View, Real-Time Proxy Timestamps, and Independent `token_metrics.json`.
 - [v0.1.0 Changelog](./docs/changelogs/v0.1.0.md): Antigravity Hub Rebranding, Quota Progress Bars, Reset Timers, Priority Steppers, System Tray.

@@ -7,8 +7,8 @@ và quản lý nhật ký: cấu hình lưu trữ (7/30/90 ngày) cùng nút Xó
 
 import os
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QFileDialog, QGroupBox, QMessageBox, QComboBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
+    QFileDialog, QGroupBox, QMessageBox, QComboBox, QScrollArea, QFrame, QSizePolicy
 )
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
@@ -24,6 +24,7 @@ from launcher_log_manager import (
 )
 from launcher_widget import SettingRow
 from launcher_tray import TraySettingsGroup
+from launcher_backup import BackupSettingsGroup
 
 class SettingsView(QWidget):
     """View cấu hình hệ thống, đường dẫn thực thi và nhật ký."""
@@ -35,44 +36,33 @@ class SettingsView(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        self.scroll_area = QScrollArea(self)
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_content = QWidget()
+        scroll_content.setObjectName("settings_scroll_content")
+        layout = QVBoxLayout(scroll_content)
+        layout.setContentsMargins(16, 14, 16, 10)
         layout.setSpacing(12)
 
         # 1. Nhóm đường dẫn thực thi
         self.grp_paths = QGroupBox(tr("settings.paths_group"))
         grp_paths_layout = QVBoxLayout(self.grp_paths)
+        grp_paths_layout.setContentsMargins(12, 14, 12, 12)
         grp_paths_layout.setSpacing(8)
 
-        self.lbl_app = QLabel(f"<b>{tr('settings.app_path')}:</b>")
-        grp_paths_layout.addWidget(self.lbl_app)
-        row_app = QHBoxLayout()
-        self.txt_app = QLineEdit(get_app_binary(self.win.data))
-        row_app.addWidget(self.txt_app, 1)
+        self.lbl_app, self.txt_app, self.btn_browse_app, self.btn_detect_app = self._build_path_row(
+            grp_paths_layout, "settings.app_path", get_app_binary(self.win.data), self._browse_app, self._detect_app
+        )
 
-        self.btn_browse_app = QPushButton(tr("settings.browse"))
-        self.btn_browse_app.clicked.connect(self._browse_app)
-        row_app.addWidget(self.btn_browse_app)
-
-        self.btn_detect_app = QPushButton(tr("settings.detect"))
-        self.btn_detect_app.clicked.connect(self._detect_app)
-        row_app.addWidget(self.btn_detect_app)
-        grp_paths_layout.addLayout(row_app)
-
-        self.lbl_ide = QLabel(f"<b>{tr('settings.ide_path')}:</b>")
-        grp_paths_layout.addWidget(self.lbl_ide)
-        row_ide = QHBoxLayout()
-        self.txt_ide = QLineEdit(get_ide_binary(self.win.data))
-        row_ide.addWidget(self.txt_ide, 1)
-
-        self.btn_browse_ide = QPushButton(tr("settings.browse"))
-        self.btn_browse_ide.clicked.connect(self._browse_ide)
-        row_ide.addWidget(self.btn_browse_ide)
-
-        self.btn_detect_ide = QPushButton(tr("settings.detect"))
-        self.btn_detect_ide.clicked.connect(self._detect_ide)
-        row_ide.addWidget(self.btn_detect_ide)
-        grp_paths_layout.addLayout(row_ide)
+        self.lbl_ide, self.txt_ide, self.btn_browse_ide, self.btn_detect_ide = self._build_path_row(
+            grp_paths_layout, "settings.ide_path", get_ide_binary(self.win.data), self._browse_ide, self._detect_ide
+        )
         layout.addWidget(self.grp_paths)
 
         # 2. Nhóm quản lý nhật ký (Log Management & Retention)
@@ -104,6 +94,10 @@ class SettingsView(QWidget):
         self.grp_tray = TraySettingsGroup(self.win, self)
         layout.addWidget(self.grp_tray)
 
+        # 4. Nhóm Sao lưu & Phục hồi
+        self.grp_backup = BackupSettingsGroup(self.win, self)
+        layout.addWidget(self.grp_backup)
+
         # 4. Desktop Shortcut & Thư mục Dữ liệu (Data Directory)
         row_sc = QHBoxLayout()
         row_sc.setSpacing(8)
@@ -124,12 +118,34 @@ class SettingsView(QWidget):
         layout.addLayout(row_sc)
 
         layout.addStretch(1)
+        self.scroll_area.setWidget(scroll_content)
+        outer_layout.addWidget(self.scroll_area, 1)
 
-        # 4. Nút Lưu Cài đặt
+        # 4. Nút Lưu Cài đặt (ghim cố định ở chân view)
+        footer = QHBoxLayout()
+        footer.setContentsMargins(16, 8, 16, 14)
         self.btn_save = QPushButton(tr("btn.save"))
         self.btn_save.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold; height: 32px;")
         self.btn_save.clicked.connect(self._save_settings)
-        layout.addWidget(self.btn_save)
+        footer.addWidget(self.btn_save)
+        outer_layout.addLayout(footer)
+
+    def _build_path_row(self, parent_layout, label_key, initial_val, on_browse, on_detect):
+        lbl = QLabel(f"<b>{tr(label_key)}:</b>")
+        parent_layout.addWidget(lbl)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        txt, btn_b, btn_d = QLineEdit(initial_val), QPushButton(tr("settings.browse")), QPushButton(tr("settings.detect"))
+        btn_b.clicked.connect(on_browse)
+        btn_d.clicked.connect(on_detect)
+        for w in (txt, btn_b, btn_d):
+            w.setMinimumHeight(32)
+            w.setSizePolicy(w.sizePolicy().horizontalPolicy(), QSizePolicy.Policy.Fixed)
+        row.addWidget(txt, 1)
+        row.addWidget(btn_b)
+        row.addWidget(btn_d)
+        parent_layout.addLayout(row)
+        return lbl, txt, btn_b, btn_d
 
     def _browse_app(self):
         f, _ = QFileDialog.getOpenFileName(self, tr("settings.browse_app_title"), self.txt_app.text().strip())
@@ -232,10 +248,14 @@ class SettingsView(QWidget):
             self.btn_clear_log.setText(tr("btn.clear_log"))
         if hasattr(self, "btn_shortcut"):
             self.btn_shortcut.setText(tr("settings.create_shortcut"))
+        if hasattr(self, "btn_install_cert"):
+            self.btn_install_cert.setText(tr("settings.install_cert"))
         if hasattr(self, "btn_open_data"):
             self.btn_open_data.setText(tr("settings.open_data_dir"))
         if hasattr(self, "grp_tray"):
             self.grp_tray.retranslate_ui()
+        if hasattr(self, "grp_backup"):
+            self.grp_backup.retranslate_ui()
         if hasattr(self, "btn_save"):
             self.btn_save.setText(tr("btn.save"))
 
