@@ -17,18 +17,54 @@ class AgentPool {
   }
 
   getAgentForAccount(account) {
+    const IDLE_FREE_SOCKET_MS = 8000;
     const key = this.getAccountKey(account);
     if (!this.agents.has(key)) {
       const agent = new https.Agent({
         keepAlive: true,
-        keepAliveMsecs: 10000,
-        maxFreeSockets: 5,
-        maxSockets: 20,
+        keepAliveMsecs: 3000,
+        maxFreeSockets: 1,
+        maxSockets: 15,
+        scheduling: "lifo",
         timeout: 120000
       });
+      // Huy socket free roi >8s de tranh tai su dung ket noi ban-mo bi Google Frontend dong ngam
+      const origKeepAlive = agent.keepSocketAlive.bind(agent);
+      agent.keepSocketAlive = (socket) => {
+        const kept = origKeepAlive(socket);
+        if (kept) {
+          const onIdle = () => socket.destroy();
+          socket._idleKill = onIdle;
+          socket.setTimeout(IDLE_FREE_SOCKET_MS, onIdle);
+        }
+        return kept;
+      };
+      const origReuse = agent.reuseSocket.bind(agent);
+      agent.reuseSocket = (socket, req) => {
+        if (socket._idleKill) {
+          socket.removeListener("timeout", socket._idleKill);
+          socket._idleKill = null;
+        }
+        socket.setTimeout(120000);
+        return origReuse(socket, req);
+      };
       this.agents.set(key, agent);
     }
     return this.agents.get(key);
+  }
+
+  evictIdleSockets(account) {
+    const key = this.getAccountKey(account);
+    const agent = this.agents.get(key);
+    if (agent && agent.freeSockets) {
+      for (const name in agent.freeSockets) {
+        const sockets = agent.freeSockets[name] || [];
+        while (sockets.length > 0) {
+          const sock = sockets.shift();
+          if (sock && !sock.destroyed) sock.destroy();
+        }
+      }
+    }
   }
 
   destroyAgentForAccount(account) {

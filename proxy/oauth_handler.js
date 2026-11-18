@@ -1,3 +1,4 @@
+const fs = require("node:fs");
 const {
   generatePkceChallenge,
   buildGoogleAuthUrl,
@@ -9,6 +10,53 @@ const {
 
 const pendingSessions = new Map();
 
+const OAUTH_I18N = {
+  vi: {
+    successTitle: "Đăng nhập thành công!",
+    successMsg: (email, name) => `Tài khoản <b>${email}</b> (${name}) đã được liên kết thành công vào Antigravity Hub.`,
+    successHint: "Tab này sẽ tự động đóng ngay lập tức. Nếu trình duyệt không tự đóng, vui lòng nhấn nút bên dưới.",
+    authFailedTitle: "Ủy quyền thất bại",
+    authFailedMsg: (err) => `Google trả về lỗi: ${err}`,
+    expiredTitle: "Phiên hết hạn hoặc không hợp lệ",
+    expiredMsg: "Không tìm thấy phiên đăng nhập tương ứng. Vui lòng thử lại từ Launcher.",
+    processErrTitle: "Lỗi xử lý tài khoản",
+    errorHint: "Bạn có thể đóng tab này và thử lại từ Antigravity Hub.",
+    closeBtn: "Đóng tab"
+  },
+  en: {
+    successTitle: "Login Successful!",
+    successMsg: (email, name) => `Account <b>${email}</b> (${name}) has been successfully linked to Antigravity Hub.`,
+    successHint: "This tab will close automatically. If your browser blocks auto-close, click the button below.",
+    authFailedTitle: "Authorization Failed",
+    authFailedMsg: (err) => `Google returned an error: ${err}`,
+    expiredTitle: "Session Expired or Invalid",
+    expiredMsg: "No matching login session was found. Please try again from the Launcher.",
+    processErrTitle: "Account Processing Error",
+    errorHint: "You can close this tab and try again from Antigravity Hub.",
+    closeBtn: "Close Tab"
+  }
+};
+
+function resolveLang(preferredLang, profilesFile) {
+  let lang = preferredLang;
+  if (!lang && profilesFile && fs.existsSync(profilesFile)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(profilesFile, "utf8"));
+      lang = parsed?.settings?.language;
+    } catch (_) {}
+  }
+  const normalized = String(lang || "vi").toLowerCase();
+  return normalized.startsWith("en") ? "en" : "vi";
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function cleanupExpiredSessions() {
   const now = Date.now();
   for (const [state, sess] of pendingSessions.entries()) {
@@ -17,55 +65,54 @@ function cleanupExpiredSessions() {
     }
   }
 }
-setInterval(cleanupExpiredSessions, 60 * 1000);
+setInterval(cleanupExpiredSessions, 60 * 1000).unref();
 
-function renderHtml(title, message, isSuccess = true) {
-  if (isSuccess) {
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title></title>
-  <script>
-    function doClose() {
-      try {
-        window.open('', '_self', '');
-        window.close();
-      } catch (_) {}
+function renderHtml(title, message, isSuccess = true, lang = "vi") {
+  const copy = OAUTH_I18N[lang === "en" ? "en" : "vi"];
+  const accent = isSuccess ? "#a6e3a1" : "#f38ba8";
+  const ringBg = isSuccess ? "rgba(166, 227, 161, 0.14)" : "rgba(243, 139, 168, 0.14)";
+  const iconSvg = isSuccess
+    ? `<svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`
+    : `<svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+  const hint = isSuccess ? copy.successHint : copy.errorHint;
+  const autoCloseScript = isSuccess
+    ? `<script>
+    function closeTab() {
+      try { window.open('', '_self', ''); window.close(); } catch (_) {}
     }
-    doClose();
-    window.addEventListener('DOMContentLoaded', doClose);
-    window.addEventListener('load', doClose);
-    setTimeout(doClose, 10);
-    setTimeout(doClose, 50);
-    setTimeout(doClose, 150);
-  </script>
-</head>
-<body style="background:#0f172a;margin:0;"></body>
-</html>`;
-  }
+    closeTab();
+    window.addEventListener('DOMContentLoaded', () => { closeTab(); setTimeout(closeTab, 120); setTimeout(closeTab, 500); });
+    window.addEventListener('load', () => { closeTab(); setTimeout(closeTab, 250); });
+  </script>`
+    : `<script>
+    function closeTab() { try { window.open('', '_self', ''); window.close(); } catch (_) {} }
+  </script>`;
 
-  const color = "#e74c3c";
-  const icon = "[FAIL]";
   return `<!DOCTYPE html>
-<html>
+<html lang="${lang === "en" ? "en" : "vi"}">
 <head>
   <meta charset="utf-8">
-  <title>${title}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; text-align: center; }
-    .card { background: #1e293b; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); max-width: 480px; border: 1px solid #334155; }
-    h1 { font-size: 24px; color: ${color}; margin-top: 10px; }
-    p { font-size: 15px; color: #94a3b8; line-height: 1.6; }
-    .btn { display: inline-block; margin-top: 20px; padding: 10px 24px; background: #3b82f6; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #1e1e2e; color: #cdd6f4; text-align: center; }
+    .card { background: #24273a; padding: 40px 36px; border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.45); max-width: 460px; width: calc(100% - 32px); border: 1px solid #363a4f; }
+    .icon-wrap { width: 104px; height: 104px; margin: 0 auto 20px; border-radius: 50%; background: ${ringBg}; display: flex; align-items: center; justify-content: center; }
+    h1 { font-size: 24px; color: ${accent}; margin: 0 0 12px; }
+    p { font-size: 15px; color: #bac2de; line-height: 1.6; margin: 0 0 12px; }
+    .hint { font-size: 13px; color: #7f849c; margin-top: 8px; }
+    .btn { margin-top: 18px; padding: 10px 24px; background: #313244; color: #cdd6f4; border: 1px solid #45475a; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn:hover { background: #45475a; }
   </style>
+  ${autoCloseScript}
 </head>
 <body>
   <div class="card">
-    <div style="font-size: 48px;">${icon}</div>
-    <h1>${title}</h1>
+    <div class="icon-wrap">${iconSvg}</div>
+    <h1>${escapeHtml(title)}</h1>
     <p>${message}</p>
-    <p style="font-size: 13px; color: #64748b;">Bạn có thể đóng tab này và quay lại Antigravity Launcher.</p>
+    <p class="hint">${escapeHtml(hint)}</p>
+    <button type="button" class="btn" onclick="closeTab()">${escapeHtml(copy.closeBtn)}</button>
   </div>
 </body>
 </html>`;
@@ -79,11 +126,12 @@ async function handleOAuthRoute(req, res, context) {
       const { codeVerifier, codeChallenge, state } = generatePkceChallenge();
       const redirectUri = `http://localhost:${context.proxyPort}/oauth/callback`;
       const authUrl = buildGoogleAuthUrl(context.config, codeChallenge, state, redirectUri);
+      const lang = resolveLang(url.searchParams.get("lang"), context.profilesFile);
 
-      pendingSessions.set(state, { codeVerifier, redirectUri, createdAt: Date.now() });
+      pendingSessions.set(state, { codeVerifier, redirectUri, lang, createdAt: Date.now() });
 
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ success: true, authUrl, state, redirectUri }));
+      res.end(JSON.stringify({ success: true, authUrl, state, redirectUri, lang }));
       return true;
     }
 
@@ -91,20 +139,22 @@ async function handleOAuthRoute(req, res, context) {
       const code = url.searchParams.get("code");
       const state = url.searchParams.get("state");
       const error = url.searchParams.get("error");
+      const session = state ? pendingSessions.get(state) : null;
+      const lang = resolveLang(session?.lang, context.profilesFile);
+      const copy = OAUTH_I18N[lang];
 
       if (error) {
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderHtml("Ủy quyền thất bại", `Google trả về lỗi: ${error}`, false));
+        res.end(renderHtml(copy.authFailedTitle, copy.authFailedMsg(escapeHtml(error)), false, lang));
         return true;
       }
 
-      if (!code || !state || !pendingSessions.has(state)) {
+      if (!code || !state || !session) {
         res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderHtml("Phiên hết hạn hoặc không hợp lệ", "Không tìm thấy phiên đăng nhập tương ứng. Vui lòng thử lại từ Launcher.", false));
+        res.end(renderHtml(copy.expiredTitle, copy.expiredMsg, false, lang));
         return true;
       }
 
-      const session = pendingSessions.get(state);
       pendingSessions.delete(state);
 
       try {
@@ -142,12 +192,17 @@ async function handleOAuthRoute(req, res, context) {
         });
 
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderHtml("Đăng nhập thành công!", `Tài khoản <b>${userInfo.email}</b> (${userInfo.name}) đã được liên kết thành công vào Antigravity Launcher & Micro-Proxy!`, true));
+        res.end(renderHtml(
+          copy.successTitle,
+          copy.successMsg(escapeHtml(userInfo.email), escapeHtml(userInfo.name)),
+          true,
+          lang
+        ));
         return true;
       } catch (err) {
         console.error("[OAUTH-ERR] Lỗi hoàn tất OAuth:", err.message);
         res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(renderHtml("Lỗi xử lý tài khoản", err.message, false));
+        res.end(renderHtml(copy.processErrTitle, escapeHtml(err.message), false, lang));
         return true;
       }
     }
@@ -170,7 +225,7 @@ async function handleOAuthRoute(req, res, context) {
           const session = pendingSessions.get(state) || Array.from(pendingSessions.values())[0];
           if (!session || !code) {
             res.writeHead(400, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ success: false, error: "Mã code hoặc session không hợp lệ" }));
+            res.end(JSON.stringify({ success: false, error: "Invalid code or session" }));
             return;
           }
 
@@ -202,5 +257,7 @@ async function handleOAuthRoute(req, res, context) {
 }
 
 module.exports = {
-  handleOAuthRoute
+  handleOAuthRoute,
+  renderHtml,
+  resolveLang
 };

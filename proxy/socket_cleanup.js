@@ -74,9 +74,23 @@ function handleClientError(err, socket) {
   }
 }
 
+function isSocketResetError(err) {
+  if (!err) return false;
+  const msg = (err.message || "").toLowerCase();
+  const code = (err.code || "").toUpperCase();
+  return (
+    msg.includes("socket hang up") ||
+    msg.includes("econnreset") ||
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "ETIMEDOUT"
+  );
+}
+
 module.exports = {
   destroyStream,
   attachClientCloseHandler,
   attachConnectTunnelCleanup,
-  handleClientError
+  handleClientError,
+  isSocketResetError
 };

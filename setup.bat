@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ============================================================
-echo   Antigravity Launcher & Micro-Proxy - Windows Setup
+echo   Antigravity Launcher ^& Micro-Proxy - Windows Setup
 echo ============================================================
 echo.
 

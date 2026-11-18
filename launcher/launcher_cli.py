@@ -218,7 +218,8 @@ def run_cli(args):
     if args.add_google:
         ensure_proxy_running()
         try:
-            req = urllib.request.Request("http://127.0.0.1:20130/_oauth/start")
+            cur_lang = (data.get("settings", {}).get("language") or "vi").lower()
+            req = urllib.request.Request(f"http://127.0.0.1:20130/_oauth/start?lang={cur_lang}")
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
             auth_url = data.get("authUrl")

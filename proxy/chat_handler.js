@@ -1,18 +1,26 @@
 const https = require("node:https");
 const { ensureValidToken, refreshGoogleAccessToken } = require("./token_manager");
-const { getAgentForAccount } = require("./agent_pool");
+const { agentPool, getAgentForAccount } = require("./agent_pool");
 const { sessionAffinity } = require("./session_affinity");
-const { destroyStream, attachClientCloseHandler } = require("./socket_cleanup");
+const { destroyStream, attachClientCloseHandler, isSocketResetError } = require("./socket_cleanup");
 const { extractUsageMetadata, recordTokens, formatTokenCount } = require("./token_tracker");
 const {
   isAiChatEndpoint,
   rewriteChatPayload,
   readErrorBody,
+  computeTtfbTimeoutMs,
+  hasFailoverBudget,
+  buildForwardHeaders,
   create503AuthShieldPayload
 } = require("./chat_payload_helper");
 
+const INACTIVITY_TIMEOUT_MS = 120000; // 120s sliding window cho thinking model context lon
+
 // Gui Chat Request voi Dedicated Agent, Dynamic Rewrite, Auto-Failover va Auth Shield
-async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt = 1) {
+async function executeGoogleChatRequest(
+  account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context,
+  attempt = 1, requestStartedAt = Date.now(), isFreshRetry = false
+) {
   const totalAccs = context.accounts.length || 1;
   const accName = account ? account.email : "UNKNOWN";
   const rawHost = origHeaders["host"] || "daily-cloudcode-pa.googleapis.com";
@@ -42,27 +50,9 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
       ? context.isSubagent
       : sessionAffinity.isSubagent(reqUrl, host, origHeaders, bodyBuffer, context.sessionId);
     const tag = isSubagent ? "[SUBAGENT]" : "[MAIN]";
-
-    const userAgent = origHeaders["user-agent"] || (process.platform === "win32" ? "antigravity/2.24.0 win32/x64" : "antigravity/2.24.0 linux/x64");
-    const fwdHeaders = { ...origHeaders, host, "user-agent": userAgent };
-    delete fwdHeaders["host"];
-    fwdHeaders["host"] = host;
-    if (!fwdHeaders["x-client-name"]) fwdHeaders["x-client-name"] = "antigravity";
-    if (!fwdHeaders["x-client-version"]) fwdHeaders["x-client-version"] = "2.24.0";
-
-    if (account && account.accessToken) {
-      fwdHeaders["authorization"] = `Bearer ${account.accessToken}`;
-    }
-    // RFC 7230 §3.3.2 / RFC 9112 §6.1: Delete Transfer-Encoding when sending Content-Length
-    delete fwdHeaders["transfer-encoding"];
-    delete fwdHeaders["Transfer-Encoding"];
-    if (finalBodyBuffer && finalBodyBuffer.length > 0) {
-      fwdHeaders["content-length"] = finalBodyBuffer.length;
-    }
-
-    // 42s TTFB: chu dong failover truoc nguong timeout 60s cua client IDE
-    const TTFB_TIMEOUT_MS = 42000;
-    const INACTIVITY_TIMEOUT_MS = 120000; // 120s sliding window cho thinking model context lon
+    const fwdHeaders = buildForwardHeaders(origHeaders, host, account, finalBodyBuffer);
+    const ttfbTimeoutMs = computeTtfbTimeoutMs(attempt, requestStartedAt);
+    const attemptStartedAt = Date.now();
 
     const outgoingOptions = {
       hostname: host, port: 443, path: reqUrl, method: reqMethod,
@@ -75,26 +65,18 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     let timeoutTimer = null;
     let detachClientClose = () => {};
 
-    function clearAllTimeout() {
-      if (timeoutTimer) {
-        clearTimeout(timeoutTimer);
-        timeoutTimer = null;
-      }
-    }
-
+    function clearAllTimeout() { if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; } }
     function safeEndSession() {
       clearAllTimeout();
       detachClientClose();
-      if (!sessionEnded) {
-        sessionEnded = true;
-        sessionAffinity.endRequest();
-      }
+      if (!sessionEnded) { sessionEnded = true; sessionAffinity.endRequest(); }
     }
 
     function resetTimeout(ms) {
       clearAllTimeout();
       timeoutTimer = setTimeout(() => {
-        console.warn(`[UPSTREAM-TIMEOUT] [WARN] Timeout (${ms}ms) tren ket noi Google (${host}) cho [${accName}]`);
+        const totalElapsed = Date.now() - requestStartedAt;
+        console.warn(`[UPSTREAM-TIMEOUT] [WARN] Timeout (${ms}ms, total=${totalElapsed}ms, attempt=#${attempt}) tren Google (${host}) cho [${accName}]`);
         clearAllTimeout();
         safeEndSession();
         const hadActiveRes = Boolean(activeGRes);
@@ -105,7 +87,6 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
         }
         const reqWasDestroyed = gReq.destroyed;
         gReq.destroy(new Error("Upstream connection timeout"));
-        // Sau khi da gui header (activeGRes), gReq.on("error") thuong khong ban -> huy clientRes truc tiep
         if (hadActiveRes || clientRes.headersSent || reqWasDestroyed) {
           terminateClient(`Upstream inactivity timeout (${ms}ms)`);
         }
@@ -113,7 +94,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     }
 
     sessionAffinity.startRequest(account);
-    resetTimeout(TTFB_TIMEOUT_MS);
+    resetTimeout(ttfbTimeoutMs);
 
     const gReq = https.request(outgoingOptions, async (gRes) => {
       try {
@@ -123,6 +104,10 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
           return;
         }
         activeGRes = gRes;
+        const ttfbMs = Date.now() - attemptStartedAt;
+        if (ttfbMs >= 10000) {
+          console.log(`[SLOW-TTFB] [${accName}] Nhan header HTTP ${gRes.statusCode} sau ${ttfbMs}ms (attempt #${attempt})`);
+        }
         resetTimeout(INACTIVITY_TIMEOUT_MS);
 
         // XU LY 401 UNAUTHORIZED: Ep cap moi token ngay lap tuc
@@ -137,7 +122,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
             const retryAcc = refreshed ? account : context.nextAccount(context.sessionId, true, isSubagent, account);
             if (refreshed) console.log(`[AUTO-FAILOVER-401] [OK] Cap moi token thanh cong cho ${accName}. Thu lai...`);
             else console.warn(`[AUTO-FAILOVER-401] [FAIL] Refresh that bai cho ${accName}. Chuyen tiep...`);
-            executeGoogleChatRequest(retryAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1)
+            executeGoogleChatRequest(retryAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1, requestStartedAt)
               .catch((err) => terminateClient(err?.message || "Retry failed"));
           }).catch((err) => {
             safeEndSession();
@@ -166,7 +151,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
           });
 
           if (isAborted || clientRes.destroyed || clientRes.closed) return;
-          executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1)
+          executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1, requestStartedAt)
             .catch((err) => terminateClient(err?.message || "Failover retry failed"));
           return;
         }
@@ -205,14 +190,10 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
         });
 
         function commitRecordedTokens() {
-          if (latestMeta) {
-            recordTokens(latestMeta, context?.config?.CONFIG_DIR);
-            const sK = formatTokenCount(latestMeta.sent);
-            const rK = formatTokenCount(latestMeta.received);
-            const cK = formatTokenCount(latestMeta.cached);
-            console.log(`[TOKENS] [${accName}] Sent: ${sK} | Recv: ${rK} | Cached: ${cK}`);
-            latestMeta = null;
-          }
+          if (!latestMeta) return;
+          recordTokens(latestMeta, context?.config?.CONFIG_DIR);
+          console.log(`[TOKENS] [${accName}] Sent: ${formatTokenCount(latestMeta.sent)} | Recv: ${formatTokenCount(latestMeta.received)} | Cached: ${formatTokenCount(latestMeta.cached)}`);
+          latestMeta = null;
         }
 
         gRes.on("end", () => { clearAllTimeout(); commitRecordedTokens(); safeEndSession(); activeGRes = null; });
@@ -229,7 +210,7 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
           safeEndSession();
           destroyStream(gRes);
           activeGRes = null;
-          if (!clientRes.destroyed && !clientRes.closed) clientRes.destroy(err);
+          if (!clientRes.destroyed && !clientRes.closed) clientRes.destroy();
         });
 
         clientRes.on("error", (err) => {
@@ -252,7 +233,17 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
     detachClientClose = attachClientCloseHandler({
       clientRes, gReq, getActiveGRes: () => activeGRes,
       safeEndSession: () => { clearAllTimeout(); safeEndSession(); },
-      onAbort: () => { isAborted = true; clearAllTimeout(); }, accName
+      onAbort: () => {
+        isAborted = true;
+        clearAllTimeout();
+        if (!clientRes.headersSent) {
+          agentPool.destroyAgentForAccount(account);
+          if (attempt > 1 || (Date.now() - attemptStartedAt) >= 15000) {
+            context.nextAccount(context.sessionId, true, isSubagent, account);
+          }
+        }
+      },
+      accName
     });
 
     gReq.on("error", (e) => {
@@ -266,13 +257,19 @@ async function executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, 
       }
 
       console.error(`[UPSTREAM-ERR] Loi ket noi Google (${host}) tren [${accName}]:`, e.message);
+      agentPool.destroyAgentForAccount(account);
 
-      if (account) account.unhealthyUntil = Date.now() + 60 * 1000;
+      if (!isFreshRetry && isSocketResetError(e) && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed && hasFailoverBudget(requestStartedAt, bodyBuffer)) {
+        console.warn(`[FRESH-SOCKET-RETRY] [WARN] Socket bi ngat ngam (${e.message}) tren [${accName}]. Thu lai tren ket noi moi...`);
+        executeGoogleChatRequest(account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt, requestStartedAt, true)
+          .catch((err) => terminateClient(err?.message || "Fresh socket retry failed"));
+        return;
+      }
 
-      if (attempt <= totalAccs && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+      if (attempt <= totalAccs && hasFailoverBudget(requestStartedAt, bodyBuffer) && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
         const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
         console.warn(`[AUTO-FAILOVER-NET] [WARN] Loi socket (${e.message}). Doi sang ${nextAcc?.email}...`);
-        executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1)
+        executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1, requestStartedAt, false)
           .catch((err) => terminateClient(err?.message || "Failover network retry failed"));
         return;
       }

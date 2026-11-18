@@ -166,5 +166,13 @@
   "restore.failed": "Phục hồi thất bại: {error}",
   "restore.invalid_zip": "File zip không hợp lệ hoặc thiếu dữ liệu tài khoản/cấu hình.",
   "restore.incompatible_encryption": "Bản sao lưu này chứa token mã hóa cũ gắn theo máy (enc:v1/enc:v2) không thể dùng trên máy mới. Hãy xuất lại bản sao lưu dạng thuần từ máy cũ hoặc đăng nhập lại tài khoản.",
-  "restore.select_zip_title": "Chọn file sao lưu Antigravity (.zip)"
+  "restore.select_zip_title": "Chọn file sao lưu Antigravity (.zip)",
+  "oauth.dialog_title": "Đang chờ đăng nhập Google",
+  "oauth.opened_browser_title": "Đã mở trình duyệt đăng nhập Google",
+  "oauth.instruction": "Vui lòng hoàn tất xác thực trên trình duyệt của bạn.\nMicro-Proxy sẽ tự động bắt callback và liên kết tài khoản.",
+  "oauth.copy_link": "Sao chép link đăng nhập",
+  "oauth.link_copied": "Đã sao chép link!",
+  "oauth.success_info": "Đã kết nối tài khoản Google mới thành công!",
+  "oauth.proxy_error_title": "Lỗi kết nối Micro-Proxy",
+  "oauth.proxy_error_desc": "Không thể khởi tạo phiên OAuth trên cổng 20130: {error}"
 }

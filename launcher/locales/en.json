@@ -166,5 +166,13 @@
   "restore.failed": "Restore failed: {error}",
   "restore.invalid_zip": "Invalid zip file or missing account/profile data.",
   "restore.incompatible_encryption": "This backup contains legacy machine-encrypted tokens (enc:v1/enc:v2) that cannot be used on a new system. Please re-export a plain backup from the original machine or re-add accounts.",
-  "restore.select_zip_title": "Select Antigravity Backup (.zip)"
+  "restore.select_zip_title": "Select Antigravity Backup (.zip)",
+  "oauth.dialog_title": "Waiting for Google Login",
+  "oauth.opened_browser_title": "Opened browser for Google Login",
+  "oauth.instruction": "Please complete authentication in your browser.\nMicro-Proxy will automatically capture the callback and link your account.",
+  "oauth.copy_link": "Copy login link",
+  "oauth.link_copied": "Login link copied!",
+  "oauth.success_info": "Google account connected successfully!",
+  "oauth.proxy_error_title": "Micro-Proxy Connection Error",
+  "oauth.proxy_error_desc": "Could not initialize OAuth session on port 20130: {error}"
 }

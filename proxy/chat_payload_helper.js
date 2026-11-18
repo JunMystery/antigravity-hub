@@ -126,6 +126,49 @@ function readErrorBody(res, timeoutMs = 5000) {
   });
 }
 
+const CLIENT_BUDGET_MS = 58000;
+const MIN_FAILOVER_BUDGET_MS = 12000;
+const LARGE_PROMPT_BYTE_THRESHOLD = 30000;
+const MIN_LARGE_FAILOVER_BUDGET_MS = 25000;
+const HOP_BY_HOP_HEADERS = [
+  "connection", "proxy-connection", "keep-alive",
+  "transfer-encoding", "Transfer-Encoding", "expect"
+];
+
+function computeTtfbTimeoutMs(attempt = 1, requestStartedAt = Date.now(), now = Date.now()) {
+  const elapsed = Math.max(0, now - requestStartedAt);
+  const remaining = Math.max(5000, CLIENT_BUDGET_MS - elapsed);
+  if (attempt <= 1) return Math.min(45000, remaining);
+  return Math.min(45000, remaining);
+}
+
+function hasFailoverBudget(requestStartedAt = Date.now(), bodyBuffer = null, now = Date.now()) {
+  const remaining = CLIENT_BUDGET_MS - Math.max(0, now - requestStartedAt);
+  if (bodyBuffer && bodyBuffer.length > LARGE_PROMPT_BYTE_THRESHOLD) {
+    return remaining >= MIN_LARGE_FAILOVER_BUDGET_MS;
+  }
+  return remaining >= MIN_FAILOVER_BUDGET_MS;
+}
+
+function buildForwardHeaders(origHeaders = {}, host = "", account = null, finalBodyBuffer = null) {
+  const userAgent = origHeaders["user-agent"] || (
+    process.platform === "win32" ? "antigravity/2.24.0 win32/x64" : "antigravity/2.24.0 linux/x64"
+  );
+  const fwdHeaders = { ...origHeaders, "user-agent": userAgent };
+  for (const h of HOP_BY_HOP_HEADERS) delete fwdHeaders[h];
+  delete fwdHeaders["host"];
+  fwdHeaders["host"] = host;
+  if (!fwdHeaders["x-client-name"]) fwdHeaders["x-client-name"] = "antigravity";
+  if (!fwdHeaders["x-client-version"]) fwdHeaders["x-client-version"] = "2.24.0";
+  if (account && account.accessToken) {
+    fwdHeaders["authorization"] = `Bearer ${account.accessToken}`;
+  }
+  if (finalBodyBuffer && finalBodyBuffer.length > 0) {
+    fwdHeaders["content-length"] = finalBodyBuffer.length;
+  }
+  return fwdHeaders;
+}
+
 function create503AuthShieldPayload(originalStatus = 401, accountName = "") {
   return JSON.stringify({
     error: {
@@ -136,11 +179,18 @@ function create503AuthShieldPayload(originalStatus = 401, accountName = "") {
 }
 
 module.exports = {
+  CLIENT_BUDGET_MS,
+  MIN_FAILOVER_BUDGET_MS,
+  LARGE_PROMPT_BYTE_THRESHOLD,
+  MIN_LARGE_FAILOVER_BUDGET_MS,
   isAiChatEndpoint,
   isStreamingEndpoint,
   extractModelName,
   rewriteChatPayload,
   rewriteRequestBody: rewriteChatPayload,
   readErrorBody,
+  computeTtfbTimeoutMs,
+  hasFailoverBudget,
+  buildForwardHeaders,
   create503AuthShieldPayload
 };
