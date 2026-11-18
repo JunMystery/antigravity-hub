@@ -59,9 +59,13 @@ async function refreshGoogleAccessToken(account, config) {
   const refreshPromise = (async () => {
     try {
       const plainRefreshToken = account.refreshToken;
+      const signal = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(15000)
+        : undefined;
       const res = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        signal,
         body: new URLSearchParams({
           client_id: config.GOOGLE_CLIENT_ID,
           client_secret: config.GOOGLE_CLIENT_SECRET,

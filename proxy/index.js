@@ -117,7 +117,12 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       }
       res.writeHead(gRes.statusCode, gRes.headers);
       gRes.pipe(res);
-      gRes.on("close", () => { activeGRes = null; });
+      gRes.on("close", () => {
+        activeGRes = null;
+        if (!gRes.complete && !res.writableEnded && !res.destroyed) {
+          res.destroy();
+        }
+      });
       gRes.on("end", () => { activeGRes = null; });
       gRes.on("error", () => {
         destroyStream(gRes);
@@ -153,6 +158,9 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
 
   // AI Chat & Subagent requests
   const chunks = [];
+  req.on("error", () => {
+    if (!res.writableEnded && !res.destroyed) res.destroy();
+  });
   req.on("data", (chunk) => chunks.push(chunk));
   req.on("end", async () => {
     const bodyBuffer = Buffer.concat(chunks);
@@ -177,9 +185,19 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       endpoint: `${tag} ${reqUrl.split("?")[0]}`, method: req.method, status: "sending"
     });
 
-    executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(allocation.sessionId, isSub));
+    executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(allocation.sessionId, isSub))
+      .catch((err) => {
+        console.error(`[CHAT-HANDLER-ERR] Loi khong mong doi tren [${accName}]:`, err.message);
+        if (!res.headersSent && !res.destroyed && !res.closed) {
+          res.writeHead(502, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Bad Gateway", message: err.message }));
+        } else if (!res.writableEnded && !res.destroyed) {
+          res.destroy();
+        }
+      });
   });
 });
+internalHttpsServer.requestTimeout = 0;
 internalHttpsServer.on("clientError", handleClientError);
 
 function checkCmdFile() {
@@ -220,6 +238,7 @@ proxyServer.on("connect", (req, clientSocket, head) => {
 
   if (isTargetAiHost) {
     clientSocket.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+    if (head && head.length > 0) clientSocket.unshift(head);
     internalHttpsServer.emit("connection", clientSocket);
     return;
   }

@@ -14,8 +14,8 @@ function destroyStream(stream) {
 }
 
 function attachClientCloseHandler({ clientRes, gReq, getActiveGRes, safeEndSession, onAbort, accName }) {
-  if (!clientRes) return;
-  clientRes.on("close", () => {
+  if (!clientRes) return () => {};
+  const onClose = () => {
     if (!clientRes.writableEnded) {
       if (typeof onAbort === "function") onAbort();
       console.log(`[CLIENT-ABORT] Client IDE da dong ket noi som. Huy socket upstream cho [${accName || "UNKNOWN"}]`);
@@ -29,7 +29,11 @@ function attachClientCloseHandler({ clientRes, gReq, getActiveGRes, safeEndSessi
         safeEndSession();
       }
     }
-  });
+  };
+  clientRes.on("close", onClose);
+  return () => {
+    clientRes.removeListener("close", onClose);
+  };
 }
 
 function attachConnectTunnelCleanup(clientSocket, serverSocket) {

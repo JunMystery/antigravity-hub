@@ -3,4 +3,4 @@
 Antigravity Hub - Multi-account manager & local transparent micro-proxy.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"

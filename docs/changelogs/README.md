@@ -17,6 +17,7 @@ Antigravity Hub follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 | Version | Release Date | Highlights | Changelog Link |
 |---|---|---|---|
+| **v0.1.4** | 2026-11-18 | Concurrent agent hang remediation: post-200 inactivity timeout teardown (120s window), premature upstream close handling, `readErrorBody` close/timeout guard, OAuth refresh timeout, `CONNECT` head unshift, and failover listener cleanup. | [v0.1.4 Changelog](./v0.1.4.md) |
 | **v0.1.3** | 2026-11-18 | Universal plain-JSON Backup & Restore engine (.zip archive with Replace/Merge modes & cross-OS path remapping), removal of machine-bound encryption/keyring, 9Router importer decommission, and Settings View scroll/height GUI fix. | [v0.1.3 Changelog](./v0.1.3.md) |
 | **v0.1.2** | 2026-11-16 | Automated Root CA & Combined Trust Bundle (`ca-bundle.crt`), 5-step automated installation pipeline, native 9router account migration, zero-freeze Windows UX optimizations, and auto-closing OAuth tabs. | [v0.1.2 Changelog](./v0.1.2.md) |
 | **v0.1.1** | 2026-11-16 | Token Metrics Bar (Sent/Received/Cached full numbers), Streamlined 3-column Activity Table, Model Extraction, Dedicated Sidebar Logs View, Real-Time Proxy Timestamps, and Independent `token_metrics.json`. | [v0.1.1 Changelog](./v0.1.1.md) |

@@ -100,18 +100,29 @@ function rewriteChatPayload(bodyBuffer, account, host = "") {
   }
 }
 
-function readErrorBody(res) {
+function readErrorBody(res, timeoutMs = 5000) {
   return new Promise((resolve) => {
+    if (!res || res.destroyed || res.readableEnded) return resolve("");
+    let settled = false;
     const chunks = [];
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const safeConcat = () => {
+      try { return Buffer.concat(chunks).toString("utf8"); } catch { return ""; }
+    };
+    const timer = setTimeout(() => {
+      try { res.destroy(); } catch (_) {}
+      finish(safeConcat());
+    }, timeoutMs);
+    if (typeof timer.unref === "function") timer.unref();
     res.on("data", (chunk) => chunks.push(chunk));
-    res.on("end", () => {
-      try {
-        resolve(Buffer.concat(chunks).toString("utf8"));
-      } catch {
-        resolve("");
-      }
-    });
-    res.on("error", () => resolve(""));
+    res.on("end", () => finish(safeConcat()));
+    res.on("close", () => finish(safeConcat()));
+    res.on("error", () => finish(""));
   });
 }
 

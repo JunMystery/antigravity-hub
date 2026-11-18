@@ -1,6 +1,6 @@
 # Antigravity Hub
 
-[![Version](https://img.shields.io/badge/Version-v0.1.3-blue.svg)](docs/changelogs/v0.1.3.md)
+[![Version](https://img.shields.io/badge/Version-v0.1.4-blue.svg)](docs/changelogs/v0.1.4.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 
@@ -65,7 +65,7 @@ Third-party AI gateways and multi-provider routers (such as **9Router** or comme
 ### 2. Direct Google Connection & High-Speed Local Rotation
 - **Direct-to-Google Communication**: Connects directly from your machine to Google Frontend (GFE) using dedicated per-account socket pools (`keepAlive: 15s`). No intermediate relays or third-party speed caps.
 - **Intelligent Round-Robin & Auto-Failover**: Rotates active Google accounts locally based on configured request thresholds (`requests_per_account`). If an account exhausts quota (HTTP 429) or hits an authorization error (HTTP 403), the proxy immediately fails over to the next available account without dropping the user query.
-- **Extended Thinking SSE Support**: Tailored for long reasoning models (Gemini 2.0 Flash Thinking) with a 120-second time-to-first-byte (TTFB) timeout and a 45-second sliding window between SSE chunks.
+- **Extended Thinking SSE Support**: Tailored for long reasoning models with a 42-second preemptive time-to-first-byte (TTFB) failover timeout and a 120-second sliding inactivity window between SSE chunks, with safe client teardown on upstream stall or premature close.
 
 ### 3. Dual-Track Subagent Routing (Anti-Quota Exhaustion)
 - **Automatic Account Rotation for New Subagents**: Unlike 9Router which traps all subagents on the spawning account, Antigravity assigns every newly spawned subagent to a **fresh account** from the pool (`allocateSubagentAccount`). This prevents intense subagent background workloads from exhausting the user's primary account quota.
@@ -91,7 +91,7 @@ Third-party AI gateways and multi-provider routers (such as **9Router** or comme
 | **Subagent Prompt Caching** | **Yes** (Pins account within subagent task lifecycle < 60s) | No intra-task affinity control |
 | **Connection Path** | **Direct Local-to-Google** (`127.0.0.1` -> Google Frontend) | Through multi-provider translation pipeline |
 | **Bandwidth / Throughput** | **Unrestricted** (Direct local socket pool) | Subject to gateway processing overhead & provider limits |
-| **Extended Thinking Support** | **Yes** (Optimized 120s TTFB + 45s SSE sliding window) | Variable; often timeouts on prolonged thinking models |
+| **Extended Thinking Support** | **Yes** (42s preemptive TTFB failover + 120s SSE sliding window) | Variable; often timeouts on prolonged thinking models |
 | **Credential Storage** | **Local Plain JSON (`0600`)** with Portable Cross-OS `.zip` Backup | Plaintext config files / SQLite |
 
 ---
@@ -145,6 +145,7 @@ python3 launcher/main.py --launch
 ## 📜 Release Changelogs
 
 Detailed release notes and migration guides are documented in the [Changelogs Directory](./docs/changelogs/README.md):
+- [v0.1.4 Changelog](./docs/changelogs/v0.1.4.md): Concurrent agent stream hang remediation (post-200 inactivity teardown, 120s thinking window, premature close guard, `readErrorBody` timeout, OAuth fetch timeout, `CONNECT` head unshift, and failover listener cleanup).
 - [v0.1.3 Changelog](./docs/changelogs/v0.1.3.md): Universal plain-JSON Backup & Restore engine with cross-OS path remapping, removal of machine-bound encryption/keyring, 9Router importer decommission, and Settings View scroll/row-height GUI fixes.
 - [v0.1.2 Changelog](./docs/changelogs/v0.1.2.md): Automated Root CA & Combined Trust Bundle (`ca-bundle.crt`), 5-step automated installation pipeline, native 9router account migration, zero-freeze Windows UX optimizations, and auto-closing OAuth tabs.
 - [v0.1.1 Changelog](./docs/changelogs/v0.1.1.md): Token Metrics Bar (Sent/Received/Cached full numbers), Streamlined 3-column Activity Table, Model Extraction, Dedicated Sidebar Logs View, Real-Time Proxy Timestamps, and Independent `token_metrics.json`.

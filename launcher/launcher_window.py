@@ -15,7 +15,7 @@ from PyQt6.QtGui import QIcon
 
 from launcher_storage import (
     load_data, save_data, APP_ICON, delete_account_completely,
-    get_app_binary, get_ide_binary, PROFILES_BASE_DIR
+    PROFILES_BASE_DIR
 )
 from launcher_i18n import tr, set_language
 from launcher_layout import apply_launcher_style
@@ -112,10 +112,6 @@ class LauncherWindow(QMainWindow):
             create_desktop_shortcut()
             self.data.setdefault("settings", {})["shortcut_created"] = True
             save_data(self.data)
-
-        app_bin, ide_bin = get_app_binary(self.data), get_ide_binary(self.data)
-        if (not app_bin or not os.path.exists(app_bin)) and (not ide_bin or not os.path.exists(ide_bin)):
-            QTimer.singleShot(600, self.on_settings_clicked)
 
     def switch_view(self, view_id: str):
         target = self.view_map.get(view_id)
