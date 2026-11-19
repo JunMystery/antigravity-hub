@@ -7,6 +7,7 @@ import os
 import json
 import time
 import urllib.request
+import urllib.parse
 from PyQt6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
 )
@@ -19,13 +20,20 @@ from launcher_i18n import tr
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 CMD_FILE = os.path.join(CONFIG_DIR, "proxy_cmd.json")
 
-def send_proxy_cmd(win, cmd: str):
+def send_proxy_cmd(win, cmd: str, params: dict = None) -> bool:
     """Gửi lệnh điều khiển trực tiếp tới Micro-Proxy qua HTTP hoặc tệp trung gian."""
+    query = {"cmd": cmd}
+    if isinstance(params, dict):
+        for k, v in params.items():
+            if v is not None and v != "":
+                query[k] = v
+
     sent = False
     try:
-        url = f"http://127.0.0.1:{PROXY_PORT}/_proxy_action?cmd={cmd}"
+        qs = urllib.parse.urlencode(query)
+        url = f"http://127.0.0.1:{PROXY_PORT}/_proxy_action?{qs}"
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=0.15) as resp:
+        with urllib.request.urlopen(req, timeout=0.25) as resp:
             if resp.status == 200:
                 sent = True
     except Exception:
@@ -33,10 +41,13 @@ def send_proxy_cmd(win, cmd: str):
 
     if not sent:
         try:
+            payload = dict(query)
+            payload["ts"] = time.time()
             with open(CMD_FILE, "w", encoding="utf-8") as f:
-                json.dump({"cmd": cmd, "ts": time.time()}, f)
+                json.dump(payload, f)
         except Exception:
             pass
+    return sent
 
 def build_monitor_frame(win) -> QGroupBox:
     """Tạo khung hiển thị trạng thái hoạt động trực tiếp của Micro-Proxy."""
@@ -149,7 +160,8 @@ def update_monitor_ui(win):
             win.mon_ep.setText(tr("monitor.listening_ready"))
 
         win.mon_acc.setText(f"{tr('monitor.acc_label')}<b>{account_name}</b>")
-        win.mon_req.setText(f"{tr('monitor.turn_label')}<b>{current_req}/{max_req}</b> req")
+        turn_display = str(current_req) if is_paused else f"{current_req}/{max_req}"
+        win.mon_req.setText(f"{tr('monitor.turn_label')}<b>{turn_display}</b> req")
         win.mon_total.setText(f"{tr('monitor.total_label')}<b>{total_req}</b> req")
     except Exception:
         pass

@@ -256,5 +256,175 @@ class TestLegacyEndpointsRecognition(unittest.TestCase):
         self.assertTrue(output["allAiTrue"], "All AI and legacy endpoints must be recognized")
         self.assertTrue(output["allNonAiFalse"], "Non-AI endpoints must evaluate to false")
 
+class TestAccountSelectAndFixedMode(unittest.TestCase):
+    """Kiem tra chon dich danh tai khoan, giu co dinh khi tat xoay vong va OAuth select_account."""
+
+    def test_manual_select_account_command(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            acc_file = os.path.join(tmp_dir, "accounts.json")
+            state_file = os.path.join(tmp_dir, "rotator_state.json")
+            with open(acc_file, "w") as f:
+                json.dump({
+                    "accounts": [
+                        {"id": "acc-1", "email": "user1@test.com", "accessToken": "t1"},
+                        {"id": "acc-2", "email": "user2@test.com", "accessToken": "t2"},
+                        {"id": "acc-3", "email": "user3@test.com", "accessToken": "t3"}
+                    ]
+                }, f)
+
+            code = f"""
+            const {{ AccountRotator }} = require("./proxy/account_rotator");
+            const rotator = new AccountRotator({{ ACCOUNTS_FILE: {json.dumps(acc_file)}, ROTATOR_STATE_FILE: {json.dumps(state_file)} }});
+            rotator.loadState();
+            rotator.accounts[1].unhealthyUntil = Date.now() + 60000;
+
+            function makeMockRes() {{
+              return {{
+                statusCode: 0,
+                body: "",
+                writeHead(code) {{ this.statusCode = code; }},
+                end(payload) {{ this.body = payload; }}
+              }};
+            }}
+
+            const resOk = makeMockRes();
+            rotator.handleCommand("select", resOk, () => {{}}, {{ target: "user2@test.com" }});
+            const afterOk = rotator.getCurrentAccount();
+
+            const resMiss = makeMockRes();
+            rotator.handleCommand("select", resMiss, () => {{}}, {{ target: "missing@test.com" }});
+            const afterMiss = rotator.getCurrentAccount();
+
+            console.log(JSON.stringify({{
+              okStatus: resOk.statusCode,
+              okJson: JSON.parse(resOk.body),
+              afterOkEmail: afterOk.email,
+              afterOkServed: rotator.currentAccRequestsServed,
+              afterOkUnhealthy: afterOk.unhealthyUntil,
+              missStatus: resMiss.statusCode,
+              afterMissEmail: afterMiss.email
+            }}));
+            """
+            output = json.loads(run_node(code))
+            self.assertEqual(output["okStatus"], 200)
+            self.assertTrue(output["okJson"]["success"])
+            self.assertEqual(output["afterOkEmail"], "user2@test.com")
+            self.assertEqual(output["afterOkServed"], 0)
+            self.assertEqual(output["afterOkUnhealthy"], 0)
+            self.assertEqual(output["missStatus"], 404)
+            self.assertEqual(output["afterMissEmail"], "user2@test.com")
+
+    def test_load_state_preserves_selected_account_after_reorder(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            acc_file = os.path.join(tmp_dir, "accounts.json")
+            prof_file = os.path.join(tmp_dir, "profiles.json")
+            state_file = os.path.join(tmp_dir, "rotator_state.json")
+            with open(acc_file, "w") as f:
+                json.dump({
+                    "accounts": [
+                        {"id": "uuid-1", "email": "user1@test.com", "accessToken": "t1"},
+                        {"id": "uuid-2", "email": "user2@test.com", "accessToken": "t2"},
+                        {"id": "uuid-3", "email": "user3@test.com", "accessToken": "t3"}
+                    ]
+                }, f)
+            with open(prof_file, "w") as f:
+                json.dump({
+                    "settings": {"requests_per_account": 1, "auto_rotation_enabled": True, "active_account_id": ""},
+                    "profiles": [
+                        {"id": "user1_test_com", "email": "user1@test.com", "order": 1, "enabled": True},
+                        {"id": "user2_test_com", "email": "user2@test.com", "order": 2, "enabled": True},
+                        {"id": "user3_test_com", "email": "user3@test.com", "order": 3, "enabled": True}
+                    ]
+                }, f)
+
+            code = f"""
+            const fs = require("node:fs");
+            const {{ AccountRotator }} = require("./proxy/account_rotator");
+            const rotator = new AccountRotator({{
+              ACCOUNTS_FILE: {json.dumps(acc_file)},
+              PROFILES_FILE: {json.dumps(prof_file)},
+              ROTATOR_STATE_FILE: {json.dumps(state_file)}
+            }});
+            rotator.loadState();
+            rotator.selectAccount("user2@test.com");
+
+            // Doi thu tu trong profiles.json dua user2 len vi tri 3
+            const profData = JSON.parse(fs.readFileSync({json.dumps(prof_file)}, "utf8"));
+            profData.profiles[0].order = 2;
+            profData.profiles[1].order = 3;
+            profData.profiles[2].order = 1;
+            fs.writeFileSync({json.dumps(prof_file)}, JSON.stringify(profData), "utf8");
+            rotator.loadState();
+            const afterReorder = rotator.getCurrentAccount().email;
+
+            // Thay doi settings.active_account_id sang slug cua user3
+            profData.settings.active_account_id = "user3_test_com";
+            fs.writeFileSync({json.dumps(prof_file)}, JSON.stringify(profData), "utf8");
+            rotator.loadState();
+            const afterActiveId = rotator.getCurrentAccount().email;
+
+            console.log(JSON.stringify({{ afterReorder, afterActiveId }}));
+            """
+            output = json.loads(run_node(code))
+            self.assertEqual(output["afterReorder"], "user2@test.com")
+            self.assertEqual(output["afterActiveId"], "user3@test.com")
+
+    def test_auto_rotation_disabled_keeps_pinned_account(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            acc_file = os.path.join(tmp_dir, "accounts.json")
+            prof_file = os.path.join(tmp_dir, "profiles.json")
+            state_file = os.path.join(tmp_dir, "rotator_state.json")
+            with open(acc_file, "w") as f:
+                json.dump({
+                    "accounts": [
+                        {"id": "uuid-1", "email": "user1@test.com", "accessToken": "t1"},
+                        {"id": "uuid-2", "email": "user2@test.com", "accessToken": "t2"}
+                    ]
+                }, f)
+            with open(prof_file, "w") as f:
+                json.dump({
+                    "settings": {
+                        "requests_per_account": 1,
+                        "auto_rotation_enabled": False,
+                        "active_account_id": "user2_test_com"
+                    },
+                    "profiles": [
+                        {"id": "user1_test_com", "email": "user1@test.com", "order": 1, "enabled": True},
+                        {"id": "user2_test_com", "email": "user2@test.com", "order": 2, "enabled": True}
+                    ]
+                }, f)
+
+            code = f"""
+            const {{ AccountRotator }} = require("./proxy/account_rotator");
+            const rotator = new AccountRotator({{
+              ACCOUNTS_FILE: {json.dumps(acc_file)},
+              PROFILES_FILE: {json.dumps(prof_file)},
+              ROTATOR_STATE_FILE: {json.dumps(state_file)}
+            }});
+            rotator.loadState();
+            const allocated = [];
+            for (let i = 0; i < 5; i++) {{
+              allocated.push(rotator.allocateAccountForRequest().account.email);
+            }}
+            console.log(JSON.stringify({{ paused: rotator.rotationPaused, allocated }}));
+            """
+            output = json.loads(run_node(code))
+            self.assertTrue(output["paused"])
+            self.assertEqual(output["allocated"], ["user2@test.com"] * 5)
+
+    def test_oauth_url_includes_select_account_prompt(self):
+        code = """
+        const { buildGoogleAuthUrl } = require("./proxy/oauth_flow");
+        const url = buildGoogleAuthUrl(
+          { GOOGLE_CLIENT_ID: "cid-123" },
+          "challenge-xyz",
+          "state-abc",
+          "http://localhost:20130/oauth/callback"
+        );
+        console.log(JSON.stringify({ url }));
+        """
+        output = json.loads(run_node(code))
+        self.assertIn("prompt=select_account+consent", output["url"])
+
 if __name__ == "__main__":
     unittest.main()

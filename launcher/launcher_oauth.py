@@ -149,5 +149,7 @@ def start_google_oauth_flow(parent_window):
     if result == QDialog.DialogCode.Accepted:
         parent_window.data = load_data()
         parent_window._refresh_list()
+        if hasattr(parent_window, "_sync_active_account_ui"):
+            parent_window._sync_active_account_ui()
         parent_window.on_refresh_all_quota()
         parent_window.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{tr('oauth.success_info')}</span></b>")

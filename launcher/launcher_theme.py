@@ -91,6 +91,44 @@ QPushButton#btn_proxy_next:disabled, QPushButton#btn_proxy_toggle:disabled {
     color: #6c7086;
     border-color: #313244;
 }
+QPushButton#btn_use_account {
+    background-color: #24273a;
+    color: #89b4fa;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-weight: 600;
+}
+QPushButton#btn_use_account:hover {
+    background-color: #313244;
+    border-color: #89b4fa;
+}
+QPushButton#btn_use_account:disabled {
+    background-color: #181825;
+    color: #6c7086;
+    border-color: #313244;
+}
+QLabel#lbl_active_acc {
+    color: #a6adc8;
+    font-size: 12px;
+    font-weight: 600;
+}
+QComboBox#combo_active_account {
+    background-color: #24273a;
+    color: #cdd6f4;
+    border: 1px solid #45475a;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-weight: 500;
+}
+QComboBox#combo_active_account:hover {
+    border-color: #89b4fa;
+}
+QComboBox#combo_active_account:disabled {
+    background-color: #181825;
+    color: #6c7086;
+    border-color: #313244;
+}
 QPushButton#btn_settings {
     background-color: #313244;
     color: #cdd6f4;

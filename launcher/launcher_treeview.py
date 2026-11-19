@@ -4,13 +4,16 @@ Module quản lý bảng danh sách tài khoản (QTableWidget) và hiển thị
 Phân tách logic cập nhật và reorder sang launcher_treeview_updater.
 """
 
+import os
+import json
 from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QWidget,
     QHBoxLayout, QPushButton, QAbstractItemView
 )
 from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QBrush
 
+import launcher_storage
 from launcher_i18n import tr
 from launcher_quota_runner import refresh_single_row_quota
 from launcher_order_widget import OrderCellWidget
@@ -38,21 +41,23 @@ def reorder_profile_to(win, pid: str, new_val: int):
 def setup_treeview(win):
     """Khởi tạo bảng hiển thị danh sách tài khoản."""
     table = QTableWidget(win)
-    table.setColumnCount(6)
+    table.setColumnCount(7)
     table.setHorizontalHeaderLabels([
         tr("col.order"), tr("col.active"), tr("col.email"),
-        tr("col.5h"), tr("col.weekly"), tr("col.quota")
+        tr("col.5h"), tr("col.weekly"), tr("col.argon"), tr("col.quota")
     ])
     hdr = table.horizontalHeader()
     hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-    table.setColumnWidth(0, 68)
+    table.setColumnWidth(0, 64)
     hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
     hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
     hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-    table.setColumnWidth(3, 115)
+    table.setColumnWidth(3, 108)
     hdr.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
-    table.setColumnWidth(4, 115)
-    hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
+    table.setColumnWidth(4, 108)
+    hdr.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
+    table.setColumnWidth(5, 108)
+    hdr.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
     table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
     table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
     table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -71,7 +76,7 @@ def update_treeview_headers(win):
         return
     win.treeview.setHorizontalHeaderLabels([
         tr("col.order"), tr("col.active"), tr("col.email"),
-        tr("col.5h"), tr("col.weekly"), tr("col.quota")
+        tr("col.5h"), tr("col.weekly"), tr("col.argon"), tr("col.quota")
     ])
     if hasattr(win, "btn_refresh_all"):
         win.btn_refresh_all.setToolTip(tr("tooltip.refresh_all"))
@@ -81,6 +86,79 @@ def update_treeview_headers(win):
         win.btn_auto.setToolTip(tr("tooltip.auto_on") if auto_on else tr("tooltip.auto_off"))
         bg = "#27ae60" if auto_on else "#c0392b"
         win.btn_auto.setStyleSheet(f"background-color: {bg}; color: #ffffff; font-weight: bold;")
+
+def resolve_active_profile_id(win, profiles: list) -> str:
+    """Xác định profile_id của tài khoản đang được dùng thực tế."""
+    if not profiles:
+        return ""
+    settings = getattr(win, "data", {}).get("settings", {})
+    auto_rot = bool(settings.get("auto_rotation_enabled", True))
+    active_id = (settings.get("active_account_id", "") or "").strip()
+
+    live_email = (getattr(win, "_live_active_email", "") or "").strip().lower()
+    if not live_email:
+        status_path = os.path.join(launcher_storage.CONFIG_DIR, "live_status.json")
+        if os.path.exists(status_path):
+            try:
+                with open(status_path, "r", encoding="utf-8") as f:
+                    st = json.load(f)
+                cand = (st.get("account_email") or "").strip().lower()
+                if cand and cand not in ("--", "proxy đã dừng", "san sang"):
+                    live_email = cand
+            except Exception:
+                pass
+
+    id_by_email = {
+        (p.get("email") or p.get("name") or "").strip().lower(): p.get("id", "")
+        for p in profiles if p.get("id")
+    }
+    valid_ids = {p.get("id", "") for p in profiles if p.get("id")}
+
+    if auto_rot and live_email and live_email in id_by_email:
+        return id_by_email[live_email]
+    if active_id and active_id in valid_ids:
+        return active_id
+    if live_email and live_email in id_by_email:
+        return id_by_email[live_email]
+    first_enabled = next((p.get("id", "") for p in profiles if p.get("enabled", True) and p.get("id")), "")
+    return first_enabled or profiles[0].get("id", "")
+
+
+def _apply_email_active_style(item: QTableWidgetItem, email_val: str, is_active: bool):
+    """Đánh dấu trực quan tài khoản đang được dùng trên cột Email."""
+    item.setText(f"● {email_val}" if is_active else email_val)
+    font = item.font()
+    font.setBold(is_active)
+    item.setFont(font)
+    item.setForeground(QBrush(QColor("#a6e3a1" if is_active else "#cdd6f4")))
+
+
+def select_active_profile_row(win):
+    """Chọn và đánh dấu đúng hàng tài khoản đang được dùng trong bảng Tài khoản."""
+    table = getattr(win, "treeview", None)
+    if not table or table.rowCount() == 0:
+        return
+    profiles = getattr(win, "data", {}).get("profiles", [])
+    active_pid = resolve_active_profile_id(win, profiles)
+    if not active_pid:
+        return
+    email_map = {p.get("id"): (p.get("email") or p.get("name") or "Account") for p in profiles}
+    target_row = -1
+    for row_idx in range(table.rowCount()):
+        item_ord = table.item(row_idx, 0)
+        pid = item_ord.data(Qt.ItemDataRole.UserRole) if item_ord else None
+        is_active = (pid == active_pid)
+        item_email = table.item(row_idx, 2)
+        if item_email:
+            _apply_email_active_style(item_email, email_map.get(pid, item_email.text().lstrip("● ")), is_active)
+        if is_active:
+            target_row = row_idx
+    if target_row >= 0:
+        table.selectRow(target_row)
+        item_email = table.item(target_row, 2)
+        if item_email:
+            table.scrollToItem(item_email)
+
 
 def populate_treeview(win, select_id=None):
     """Nạp danh sách profiles vào QTableWidget."""
@@ -108,11 +186,13 @@ def populate_treeview(win, select_id=None):
                 b.setEnabled(can_run)
 
         table.setRowCount(total)
+        active_pid = resolve_active_profile_id(win, profiles)
+        effective_select_id = select_id or active_pid
         target_row = 0
 
         for row_idx, p in enumerate(profiles):
             pid = p.get("id")
-            if select_id and pid == select_id:
+            if effective_select_id and pid == effective_select_id:
                 target_row = row_idx
 
             # 0: Order (Cell Widget với Micro-Stepper ▲/▼)
@@ -144,11 +224,12 @@ def populate_treeview(win, select_id=None):
             chk_layout.addWidget(switch)
             table.setCellWidget(row_idx, 1, cell_widget)
 
-            # 2: Email (Chỉ đọc, luôn ưu tiên hiển thị địa chỉ email thực tế)
+            # 2: Email (Chỉ đọc, đánh dấu ● xanh nếu là tài khoản đang dùng)
             email_val = p.get("email") or p.get("name") or "Account"
-            item_email = QTableWidgetItem(email_val)
+            item_email = QTableWidgetItem()
             item_email.setData(Qt.ItemDataRole.UserRole, pid)
             item_email.setFlags(Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsEnabled)
+            _apply_email_active_style(item_email, email_val, pid == active_pid)
             table.setItem(row_idx, 2, item_email)
 
             # 3: 5h Quota (Thanh Gradient + % trắng + Reset in HH:MM)
@@ -167,7 +248,15 @@ def populate_treeview(win, select_id=None):
             cell_qw = QuotaCellWidget(qw_val, qw_text, qw_valid, qw_reset, parent=table)
             table.setCellWidget(row_idx, 4, cell_qw)
 
-            # 5: Single Refresh Button
+            # 5: Argon Weekly Quota (Gemini 4 Argon Weekly Limit)
+            qa_text = p.get("quota_argon") or tr("quota.not_scanned")
+            qa_val = p.get("quota_argon_val", 0)
+            qa_valid = p.get("quota_argon_valid", False)
+            qa_reset = p.get("quota_argon_reset", "")
+            cell_qa = QuotaCellWidget(qa_val, qa_text, qa_valid, qa_reset, parent=table)
+            table.setCellWidget(row_idx, 5, cell_qa)
+
+            # 6: Single Refresh Button
             btn_row_ref = QPushButton("⟳")
             btn_row_ref.setFixedSize(28, 26)
             btn_row_ref.setStyleSheet("padding: 0px; font-size: 13px; font-weight: bold;")
@@ -178,10 +267,13 @@ def populate_treeview(win, select_id=None):
             btn_layout.setContentsMargins(0, 0, 0, 0)
             btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
             btn_layout.addWidget(btn_row_ref)
-            table.setCellWidget(row_idx, 5, btn_cell)
+            table.setCellWidget(row_idx, 6, btn_cell)
 
         if total > 0:
             table.selectRow(target_row)
+            item_target = table.item(target_row, 2)
+            if item_target:
+                table.scrollToItem(item_target)
     finally:
         win.is_updating_table = False
 

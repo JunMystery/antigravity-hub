@@ -1,6 +1,6 @@
 # Antigravity Hub
 
-[![Version](https://img.shields.io/badge/Version-v0.1.4-blue.svg)](docs/changelogs/v0.1.4.md)
+[![Version](https://img.shields.io/badge/Version-v0.1.5-blue.svg)](docs/changelogs/v0.1.5.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-lightgrey.svg)]()
 
@@ -62,15 +62,17 @@ Third-party AI gateways and multi-provider routers (such as **9Router** or comme
 - **Untouched Protocol Fidelity**: Forwards authentic client HTTP requests and protobuf/JSON structures directly to Google's official Cloud Code endpoints without modification.
 - **Zero Schema Conversion**: Does not decode or wrap requests into synthetic formats, ensuring 100% compatibility with official Gemini models and tool-calling features.
 
-### 2. Direct Google Connection & High-Speed Local Rotation
+### 2. Direct Google Connection, Flexible Rotation & Account Switching
 - **Direct-to-Google Communication**: Connects directly from your machine to Google Frontend (GFE) using dedicated per-account socket pools (`keepAlive: 15s`). No intermediate relays or third-party speed caps.
-- **Intelligent Round-Robin & Auto-Failover**: Rotates active Google accounts locally based on configured request thresholds (`requests_per_account`). If an account exhausts quota (HTTP 429) or hits an authorization error (HTTP 403), the proxy immediately fails over to the next available account without dropping the user query.
+- **Intelligent Round-Robin, Fixed Mode & Auto-Failover**: Rotates active Google accounts locally based on configured request thresholds (`requests_per_account`), or can be toggled off directly from the **Accounts** tab / **Dashboard** to stay pinned to one account for maximum Prompt Cache efficiency while preserving automatic failover on HTTP 429/403/401.
+- **One-Click Active Account Switcher**: Select the active account directly from the **Dashboard** dropdown or **Use Account** button in the **Accounts** tab (with active row highlighting and synchronized App/IDE profile launch).
 - **Extended Thinking SSE Support**: Tailored for long reasoning models with budget-aware preemptive TTFB failover (`25s -> 22s -> remaining` inside the 58s IDE budget), 15s idle socket eviction, and a 120-second sliding inactivity window between SSE chunks with safe client teardown.
 
-### 3. Dual-Track Subagent Routing (Anti-Quota Exhaustion)
+### 3. Dual-Track Subagent Routing & Multi-Tier Quota Visibility
 - **Automatic Account Rotation for New Subagents**: Unlike 9Router which traps all subagents on the spawning account, Antigravity assigns every newly spawned subagent to a **fresh account** from the pool (`allocateSubagentAccount`). This prevents intense subagent background workloads from exhausting the user's primary account quota.
 - **Intra-Task Context Pinning (Prompt Caching)**: Within each subagent's active task lifecycle (< 60s idle), successive turns remain pinned to that allocated account to leverage Google Gemini's Prompt Caching and maintain conversation coherence.
 - **Main Editor Isolation**: Keeps interactive editor chat strictly isolated from background agent workloads.
+- **Separated Gemini & Argon Quota Tracking**: Independently tracks and displays **5h**, **Weekly**, and **Argon (Weekly)** quotas with gradient progress bars and reset countdown timers in both the GUI and CLI.
 
 ### 4. Real-Time Token Analytics & Independent Persistence
 - **Zero-Latency Passive Sniffing**: Sniffs authentic Google `usageMetadata` (`Sent`, `Received`, `Cached`) directly from stream chunks without buffering or delaying client responses.
@@ -145,6 +147,7 @@ python3 launcher/main.py --launch
 ## 📜 Release Changelogs
 
 Detailed release notes and migration guides are documented in the [Changelogs Directory](./docs/changelogs/README.md):
+- [v0.1.5 Changelog](./docs/changelogs/v0.1.5.md): UI Round Robin toggle & persistent fixed-account pinning, Dashboard & Accounts direct account switcher, OAuth account chooser prompt, separate Argon (Weekly) quota column, and anti-jitter Dashboard status stability.
 - [v0.1.4 Changelog](./docs/changelogs/v0.1.4.md): Concurrent agent stream hang & timeout/abort-loop remediation (budget-aware `25s -> 22s` TTFB failover, 120s thinking window, 15s idle socket eviction, hop-by-hop header stripping, pre-header abort rotation, and Dashboard startup fix).
 - [v0.1.3 Changelog](./docs/changelogs/v0.1.3.md): Universal plain-JSON Backup & Restore engine with cross-OS path remapping, removal of machine-bound encryption/keyring, 9Router importer decommission, and Settings View scroll/row-height GUI fixes.
 - [v0.1.2 Changelog](./docs/changelogs/v0.1.2.md): Automated Root CA & Combined Trust Bundle (`ca-bundle.crt`), 5-step automated installation pipeline, native 9router account migration, zero-freeze Windows UX optimizations, and auto-closing OAuth tabs.

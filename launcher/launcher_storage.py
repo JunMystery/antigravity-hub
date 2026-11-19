@@ -45,6 +45,8 @@ def load_data() -> dict:
             "settings": {
                 "use_proxy": True,
                 "round_robin_enabled": True,
+                "auto_rotation_enabled": True,
+                "active_account_id": "",
                 "requests_per_account": 1,
                 "language": "vi",
                 "log_retention_days": 30
@@ -59,6 +61,8 @@ def load_data() -> dict:
             data.setdefault("settings", {})
             data["settings"].setdefault("requests_per_account", 1)
             data["settings"].setdefault("round_robin_enabled", True)
+            data["settings"].setdefault("auto_rotation_enabled", True)
+            data["settings"].setdefault("active_account_id", "")
             data["settings"].setdefault("language", "vi")
             data["settings"].setdefault("app_binary", APP_BINARY)
             data["settings"].setdefault("ide_binary", find_ide_binary())
@@ -77,6 +81,8 @@ def load_data() -> dict:
             "settings": {
                 "use_proxy": True,
                 "round_robin_enabled": True,
+                "auto_rotation_enabled": True,
+                "active_account_id": "",
                 "requests_per_account": 1,
                 "language": "vi"
             },
