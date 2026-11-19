@@ -24,15 +24,18 @@ class CompactStatusBar(QFrame):
         layout.setContentsMargins(16, 8, 16, 8)
         layout.setSpacing(14)
 
-        # Cột 1: Trạng thái Micro-Proxy
+        # Cột 1: Trạng thái Micro-Proxy (cố định độ rộng tối thiểu để chống giật layout)
         col_status = QVBoxLayout()
         col_status.setSpacing(2)
         self.lbl_status_title = QLabel("Trạng thái")
         self.lbl_status_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
         self.lbl_status = QLabel("● STANDBY")
+        self.lbl_status.setMinimumWidth(112)
         self.lbl_status.setStyleSheet("color: #89b4fa; font-size: 15px; font-weight: bold;")
         self.lbl_status_sub = QLabel("Port 20130")
+        self.lbl_status_sub.setMinimumWidth(112)
         self.lbl_status_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
+        self._last_status_color = "#89b4fa"
         col_status.addWidget(self.lbl_status_title)
         col_status.addWidget(self.lbl_status)
         col_status.addWidget(self.lbl_status_sub)
@@ -64,33 +67,44 @@ class CompactStatusBar(QFrame):
         div2.setStyleSheet("color: #313244; border: none; border-left: 1px solid #313244;")
         layout.addWidget(div2)
 
-        # Cột 3: Lượt quay vòng hiện tại
+        # Cột 3: Lượt quay vòng hiện tại (cố định độ rộng tối thiểu để chống giật layout)
         col_turn = QVBoxLayout()
         col_turn.setSpacing(2)
         self.lbl_turn_title = QLabel("Lượt")
         self.lbl_turn_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
         self.lbl_turn = QLabel("0/1")
+        self.lbl_turn.setMinimumWidth(82)
         self.lbl_turn.setStyleSheet("color: #b4befe; font-size: 15px; font-weight: bold;")
         self.lbl_turn_sub = QLabel("Current Turn")
+        self.lbl_turn_sub.setMinimumWidth(82)
         self.lbl_turn_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
         col_turn.addWidget(self.lbl_turn_title)
         col_turn.addWidget(self.lbl_turn)
         col_turn.addWidget(self.lbl_turn_sub)
         layout.addLayout(col_turn)
 
-    def set_state(self, status_text: str, status_color: str, port_text: str, acc_email: str, turn_text: str, turn_label: str = None, status_label: str = None, acc_label: str = None):
-        if status_label:
+    def set_state(self, status_text: str, status_color: str, port_text: str, acc_email: str, turn_text: str, turn_label: str = None, status_label: str = None, acc_label: str = None, turn_sub: str = None):
+        if status_label and self.lbl_status_title.text() != status_label:
             self.lbl_status_title.setText(status_label)
-        if acc_label:
+        if acc_label and self.lbl_acc_title.text() != acc_label:
             self.lbl_acc_title.setText(acc_label)
-        if turn_label:
+        if turn_label and self.lbl_turn_title.text() != turn_label:
             self.lbl_turn_title.setText(turn_label)
+        if turn_sub is not None and self.lbl_turn_sub.text() != turn_sub:
+            self.lbl_turn_sub.setText(turn_sub)
         port_sub = f"Port {port_text}" if port_text else "Offline"
-        self.lbl_status.setText(status_text)
-        self.lbl_status.setStyleSheet(f"color: {status_color}; font-size: 15px; font-weight: bold;")
-        self.lbl_status_sub.setText(port_sub)
-        self.lbl_acc.setText(acc_email or "--")
-        self.lbl_turn.setText(turn_text)
+        if self.lbl_status.text() != status_text:
+            self.lbl_status.setText(status_text)
+        if status_color != getattr(self, "_last_status_color", None):
+            self.lbl_status.setStyleSheet(f"color: {status_color}; font-size: 15px; font-weight: bold;")
+            self._last_status_color = status_color
+        if self.lbl_status_sub.text() != port_sub:
+            self.lbl_status_sub.setText(port_sub)
+        next_acc = acc_email or "--"
+        if self.lbl_acc.text() != next_acc:
+            self.lbl_acc.setText(next_acc)
+        if self.lbl_turn.text() != turn_text:
+            self.lbl_turn.setText(turn_text)
 
 class MetricCard(QFrame):
     """Thẻ hiển thị chỉ số tổng quan với tiêu đề, giá trị chính và mô tả phụ."""

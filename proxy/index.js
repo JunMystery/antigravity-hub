@@ -182,7 +182,8 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       active: true, timestamp: Date.now(), account_email: accName,
       account_name: currentAcc?.name || accName, current_req: servedCount,
       requests_per_account: rotator.requestsPerAccount, total_requests: reqNum,
-      endpoint: `${tag} ${reqUrl.split("?")[0]}`, method: req.method, status: "sending"
+      endpoint: `${tag} ${reqUrl.split("?")[0]}`, method: req.method,
+      status: "sending", paused: rotator.rotationPaused
     });
 
     executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(allocation.sessionId, isSub))
@@ -207,7 +208,7 @@ function checkCmdFile() {
       fs.unlinkSync(CMD_FILE);
       if (content) {
         const cmdObj = JSON.parse(content);
-        if (cmdObj.cmd) rotator.handleCommand(cmdObj.cmd, null, writeLiveStatus);
+        if (cmdObj.cmd) rotator.handleCommand(cmdObj.cmd, null, writeLiveStatus, cmdObj);
       }
     } catch (_) {}
   }
@@ -223,7 +224,8 @@ const proxyServer = http.createServer(async (req, res) => {
     const parsedUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
     if (parsedUrl.pathname === "/_proxy_action") {
       const cmd = parsedUrl.searchParams.get("cmd");
-      rotator.handleCommand(cmd, res, writeLiveStatus);
+      const target = parsedUrl.searchParams.get("target") || "";
+      rotator.handleCommand(cmd, res, writeLiveStatus, { target });
       return;
     }
   } catch (_) {}

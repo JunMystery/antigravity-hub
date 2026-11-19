@@ -98,7 +98,7 @@ class TestViewNavigation(unittest.TestCase):
         """Xác nhận AccountsView chứa bảng tài khoản và nút chức năng."""
         acc_view = self.win.view_accounts
         self.assertIsNotNone(acc_view.treeview)
-        self.assertEqual(acc_view.treeview.columnCount(), 6)
+        self.assertEqual(acc_view.treeview.columnCount(), 7)
         self.assertIsNotNone(acc_view.btn_add)
         self.assertIsNotNone(acc_view.btn_del)
         self.assertIsNotNone(acc_view.btn_refresh_all)

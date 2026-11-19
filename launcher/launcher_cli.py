@@ -22,6 +22,7 @@ from launcher_proxy import (
     is_proxy_running, stop_proxy, ensure_proxy_running, launch_profile
 )
 from launcher_quota_fetcher import fetch_single_account_quota
+from launcher_quota_runner import unpack_quota_result
 
 def run_cli(args):
     """Điều hướng và thực thi các tham số dòng lệnh CLI."""
@@ -78,24 +79,29 @@ def run_cli(args):
             target_name = (p.get("name") or "").lower()
             acc = acc_map.get(target_email) or acc_map.get(target_name)
             if acc:
-                q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = fetch_single_account_quota(acc, force=True, cached_info=p)
-            else:
-                q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid = 0, "Không khớp", False, 0, "Không khớp", False
-            return p, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid
+                res = fetch_single_account_quota(acc, force=True, cached_info=p)
+                return (p, *unpack_quota_result(res))
+            return p, 0, "Không khớp", False, "", 0, "Không khớp", False, "", 0, "Không khớp", False, ""
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
             results = list(executor.map(query_profile, profiles))
 
         now = int(time.time())
-        for p, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid in results:
+        for p, q5_val, q5_text, q5_valid, q5_reset, qw_val, qw_text, qw_valid, qw_reset, qa_val, qa_text, qa_valid, qa_reset in results:
             p["quota_5h_val"] = q5_val
             p["quota_5h"] = q5_text
             p["quota_5h_valid"] = q5_valid
+            p["quota_5h_reset"] = q5_reset
             p["quota_weekly_val"] = qw_val
             p["quota_weekly"] = qw_text
             p["quota_weekly_valid"] = qw_valid
+            p["quota_weekly_reset"] = qw_reset
+            p["quota_argon_val"] = qa_val
+            p["quota_argon"] = qa_text
+            p["quota_argon_valid"] = qa_valid
+            p["quota_argon_reset"] = qa_reset
             p["quota_timestamp"] = now
-            print(f" - {p.get('name')} ({p.get('email')}): 5h={q5_text}, Weekly={qw_text}")
+            print(f" - {p.get('name')} ({p.get('email')}): 5h={q5_text}, Weekly={qw_text}, Argon={qa_text}")
 
         save_data(data)
         print("Hoàn tất cập nhật Quota.")
@@ -107,16 +113,17 @@ def run_cli(args):
             return
         reqs = data.get("settings", {}).get("requests_per_account", 1)
         print(f"Ngưỡng chuyển đổi Round Robin: {reqs} request/tài khoản")
-        print(f"{'STT':<5} {'ACTIVE':<8} {'TÀI KHOẢN EMAIL':<28} {'QUOTA 5H':<10} {'QUOTA TUẦN':<12} {'THƯ MỤC PROFILE'}")
-        print("-" * 95)
+        print(f"{'STT':<5} {'ACTIVE':<8} {'TÀI KHOẢN EMAIL':<28} {'QUOTA 5H':<10} {'QUOTA TUẦN':<12} {'ARGON':<10} {'THƯ MỤC PROFILE'}")
+        print("-" * 106)
         for idx, p in enumerate(profiles):
             ord_str = f"#{p.get('order', idx + 1)}"
             act = "[x]" if p.get("enabled", True) else "[ ]"
             q5 = p.get("quota_5h", "--")
             qw = p.get("quota_weekly", "--")
+            qa = p.get("quota_argon", "--")
             email = p.get("email") or p.get("name") or ""
             data_dir = os.path.basename(p.get("data_dir", "")) or p.get("id", "")
-            print(f"{ord_str:<5} {act:<8} {email:<28} {q5:<10} {qw:<12} {data_dir}")
+            print(f"{ord_str:<5} {act:<8} {email:<28} {q5:<10} {qw:<12} {qa:<10} {data_dir}")
         return
 
     if args.requests_per_account:

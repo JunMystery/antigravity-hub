@@ -28,6 +28,26 @@ class AccountRotator {
     this.isRestored = false;
     this.rotationPaused = false;
     this._saveTimer = null;
+    this._lastProfilesAutoRotation = undefined;
+    this._lastProfilesActiveId = undefined;
+  }
+
+  selectAccount(target) {
+    if (!target || !Array.isArray(this.accounts) || this.accounts.length === 0) return null;
+    const needle = String(target).trim().toLowerCase();
+    const idx = this.accounts.findIndex((a) => {
+      const matchId = a.id && String(a.id).toLowerCase() === needle;
+      const matchEmail = a.email && a.email.toLowerCase() === needle;
+      const matchName = a.name && a.name.toLowerCase() === needle;
+      return matchId || matchEmail || matchName;
+    });
+    if (idx === -1) return null;
+
+    this.accountIndex = idx;
+    this.currentAccRequestsServed = 0;
+    this.accounts[idx].unhealthyUntil = 0;
+    this.saveRotatorState();
+    return this.accounts[idx];
   }
 
   getCurrentAccount() {
@@ -164,11 +184,24 @@ class AccountRotator {
 
       let enabledEmails = null;
       const orderMap = new Map();
+      let cfgAutoRot;
+      let cfgActiveTarget = "";
+      let cfgActiveEmail = "";
 
       if (fs.existsSync(this.config.PROFILES_FILE)) {
         try {
           const cfg = JSON.parse(fs.readFileSync(this.config.PROFILES_FILE, "utf8"));
           this.requestsPerAccount = Math.max(1, parseInt(cfg.settings?.requests_per_account, 10) || 1);
+          if (typeof cfg.settings?.auto_rotation_enabled === "boolean") {
+            cfgAutoRot = cfg.settings.auto_rotation_enabled;
+          }
+          if (typeof cfg.settings?.active_account_id === "string") {
+            cfgActiveTarget = cfg.settings.active_account_id.trim();
+            const matchedProf = (cfg.profiles || []).find(
+              (p) => (p.id || "").toLowerCase() === cfgActiveTarget.toLowerCase()
+            );
+            cfgActiveEmail = (matchedProf?.email || "").toLowerCase();
+          }
           (cfg.profiles || []).forEach((p, idx) => {
             const prio = typeof p.order === "number" ? p.order : (idx + 1);
             if (p.email) orderMap.set(p.email.toLowerCase(), prio);
@@ -194,6 +227,7 @@ class AccountRotator {
         return (orderMap.get(keyA) ?? 99999) - (orderMap.get(keyB) ?? 99999);
       });
 
+      const prevAcc = this.isRestored ? this.accounts[this.accountIndex] : null;
       if (valid.length > 0) {
         // Preserve in-memory runtime cooldowns (unhealthyUntil) across disk reloads
         const cooldownMap = new Map();
@@ -217,9 +251,36 @@ class AccountRotator {
         this.accounts = valid;
         if (!this.isRestored) {
           this.restoreRotatorState();
+          if (typeof cfgAutoRot === "boolean") {
+            this.rotationPaused = !cfgAutoRot;
+            this._lastProfilesAutoRotation = cfgAutoRot;
+          }
+          if (cfgActiveTarget || cfgActiveEmail) {
+            const initIdx = this.accounts.findIndex((a) =>
+              (cfgActiveTarget && String(a.id || "").toLowerCase() === cfgActiveTarget.toLowerCase()) ||
+              (cfgActiveEmail && (a.email || "").toLowerCase() === cfgActiveEmail)
+            );
+            if (initIdx !== -1) this.accountIndex = initIdx;
+            this._lastProfilesActiveId = cfgActiveTarget;
+          }
           this.isRestored = true;
         } else {
-          this.accountIndex = this.accountIndex % this.accounts.length;
+          if (typeof cfgAutoRot === "boolean" && cfgAutoRot !== this._lastProfilesAutoRotation) {
+            this.rotationPaused = !cfgAutoRot;
+            this._lastProfilesAutoRotation = cfgAutoRot;
+          }
+          let nextIdx = -1;
+          if (cfgActiveTarget && cfgActiveTarget !== this._lastProfilesActiveId) {
+            nextIdx = this.accounts.findIndex((a) =>
+              String(a.id || "").toLowerCase() === cfgActiveTarget.toLowerCase() ||
+              (cfgActiveEmail && (a.email || "").toLowerCase() === cfgActiveEmail)
+            );
+            this._lastProfilesActiveId = cfgActiveTarget;
+          }
+          if (nextIdx === -1 && prevAcc) {
+            nextIdx = this.accounts.findIndex((a) => isSameAccount(a, prevAcc));
+          }
+          this.accountIndex = nextIdx !== -1 ? nextIdx : (this.accountIndex % this.accounts.length);
         }
         agentPool.cleanupDeadAgents(valid);
       }
@@ -229,19 +290,21 @@ class AccountRotator {
     }
   }
 
-  handleCommand(cmd, httpRes, writeLiveStatus) {
+  handleCommand(cmd, httpRes, writeLiveStatus, payload = {}) {
     console.log(`[PROXY-CMD] [CMD] Nhan lenh tu Launcher: ${cmd}`);
     if (cmd === "reload") {
       this.accounts.forEach((a) => { a.unhealthyUntil = 0; });
       this.loadState();
       const cur = this.getCurrentAccount();
-      writeLiveStatus({
-        active: false, timestamp: Date.now(), account_email: cur?.email || "San sang",
-        account_name: cur?.name || cur?.email || "San sang", current_req: this.currentAccRequestsServed,
-        requests_per_account: this.requestsPerAccount, total_requests: this.requestCount,
-        endpoint: "reload", method: "RELOAD", status: this.rotationPaused ? "paused" : "standby",
-        paused: this.rotationPaused
-      });
+      if (typeof writeLiveStatus === "function") {
+        writeLiveStatus({
+          active: false, timestamp: Date.now(), account_email: cur?.email || "San sang",
+          account_name: cur?.name || cur?.email || "San sang", current_req: this.currentAccRequestsServed,
+          requests_per_account: this.requestsPerAccount, total_requests: this.requestCount,
+          endpoint: "reload", method: "RELOAD", status: this.rotationPaused ? "paused" : "standby",
+          paused: this.rotationPaused
+        });
+      }
       if (httpRes) {
         httpRes.writeHead(200, { "Content-Type": "application/json" });
         httpRes.end(JSON.stringify({ success: true, count: this.accounts.length }));
@@ -249,6 +312,35 @@ class AccountRotator {
       return;
     }
     this.loadState();
+
+    if (cmd === "select") {
+      const target = payload?.target || "";
+      const selected = this.selectAccount(target);
+      if (!selected) {
+        if (httpRes) {
+          httpRes.writeHead(404, { "Content-Type": "application/json" });
+          httpRes.end(JSON.stringify({ success: false, error: "Account not found or disabled" }));
+        }
+        return;
+      }
+      console.log(`[ROUND-ROBIN] Chon thu cong tai khoan: [${selected.email}]`);
+      if (typeof writeLiveStatus === "function") {
+        writeLiveStatus({
+          active: false, timestamp: Date.now(), account_email: selected.email || "UNKNOWN",
+          account_name: selected.name || selected.email || "UNKNOWN", current_req: this.currentAccRequestsServed,
+          requests_per_account: this.requestsPerAccount, total_requests: this.requestCount,
+          endpoint: "manual_select", method: "SELECT", status: this.rotationPaused ? "paused" : "standby",
+          paused: this.rotationPaused
+        });
+      }
+      if (httpRes) {
+        httpRes.writeHead(200, { "Content-Type": "application/json" });
+        httpRes.end(JSON.stringify({
+          success: true, id: selected.id || "", email: selected.email || "", paused: this.rotationPaused
+        }));
+      }
+      return;
+    }
 
     if (cmd === "next") {
       this.nextAccount();

@@ -147,7 +147,8 @@ async function executeGoogleChatRequest(
             message: `[WARN] ${accName} bi loi ${gRes.statusCode} -> Dang doi sang ${nextAcc?.email}...`,
             timestamp: Date.now(), account_email: nextAcc?.email || accName, account_name: nextAcc?.name || accName,
             current_req: 1, requests_per_account: context.requestsPerAccount, total_requests: context.requestCount,
-            endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`, method: reqMethod
+            endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`, method: reqMethod,
+            paused: Boolean(context.rotationPaused)
           });
 
           if (isAborted || clientRes.destroyed || clientRes.closed) return;

@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 
 from launcher_i18n import tr
 from launcher_treeview import setup_treeview, populate_treeview, update_treeview_headers
+from launcher_toggle_switch import ToggleSwitch
 
 class AccountsView(QWidget):
     """View chuyên trách quản lý hồ sơ tài khoản và hạn mức sử dụng Quota."""
@@ -28,7 +29,7 @@ class AccountsView(QWidget):
         layout.setContentsMargins(16, 14, 16, 14)
         layout.setSpacing(10)
 
-        # 1. Action Bar: Thêm, Xóa, Tự động Quota, Quét tất cả
+        # 1. Action Bar: Thêm, Xóa, Chọn dùng, Tự động Quota, Quét tất cả
         act_bar = QHBoxLayout()
         act_bar.setSpacing(8)
 
@@ -39,6 +40,12 @@ class AccountsView(QWidget):
         self.btn_del = QPushButton(tr("btn.delete").replace("_", "&"))
         self.btn_del.clicked.connect(self.win.on_delete_account)
         act_bar.addWidget(self.btn_del)
+
+        self.btn_use_account = QPushButton(tr("btn.use_account"))
+        self.btn_use_account.setObjectName("btn_use_account")
+        self.btn_use_account.setToolTip(tr("tooltip.use_account"))
+        self.btn_use_account.clicked.connect(self.win.on_use_selected_account)
+        act_bar.addWidget(self.btn_use_account)
 
         act_bar.addStretch(1)
 
@@ -72,7 +79,17 @@ class AccountsView(QWidget):
         layout.addWidget(sep)
 
         opt_bar = QHBoxLayout()
-        self.rr_info = QLabel(tr("opt.mode"))
+        opt_bar.setSpacing(8)
+        auto_rot = bool(self.win.data.get("settings", {}).get("auto_rotation_enabled", True))
+        self.toggle_round_robin = ToggleSwitch(checked=auto_rot, parent=self)
+        self.toggle_round_robin.setObjectName("toggle_round_robin")
+        self.toggle_round_robin.setToolTip(
+            tr("tooltip.toggle_round_robin_on") if auto_rot else tr("tooltip.toggle_round_robin_off")
+        )
+        self.toggle_round_robin.toggled.connect(self.win.on_toggle_round_robin)
+        opt_bar.addWidget(self.toggle_round_robin)
+
+        self.rr_info = QLabel(tr("opt.mode") if auto_rot else tr("opt.mode_fixed"))
         opt_bar.addWidget(self.rr_info)
         opt_bar.addStretch(1)
 
@@ -83,6 +100,7 @@ class AccountsView(QWidget):
         self.spin_reqs = QSpinBox()
         self.spin_reqs.setRange(1, 500)
         self.spin_reqs.setValue(cur_reqs)
+        self.spin_reqs.setEnabled(auto_rot)
         self.spin_reqs.valueChanged.connect(self.win.on_spin_changed)
         opt_bar.addWidget(self.spin_reqs)
 
@@ -92,9 +110,11 @@ class AccountsView(QWidget):
         self.win.table_container = self.table_container
         self.win.btn_add = self.btn_add
         self.win.btn_del = self.btn_del
+        self.win.btn_use_account = self.btn_use_account
         self.win.btn_auto = self.btn_auto
         self.win.btn_refresh_all = self.btn_refresh_all
         self.win.lbl_info = self.lbl_info
+        self.win.toggle_round_robin = self.toggle_round_robin
         self.win.spin_reqs = self.spin_reqs
         self.win.rr_info = self.rr_info
         self.win.spin_lbl = self.spin_lbl
@@ -111,7 +131,13 @@ class AccountsView(QWidget):
         """Cập nhật ngôn ngữ các nhãn trong view."""
         self.btn_add.setText(tr("btn.add").replace("_", "&"))
         self.btn_del.setText(tr("btn.delete").replace("_", "&"))
+        self.btn_use_account.setText(tr("btn.use_account"))
+        self.btn_use_account.setToolTip(tr("tooltip.use_account"))
         self.btn_refresh_all.setToolTip(tr("tooltip.refresh_all"))
-        self.rr_info.setText(tr("opt.mode"))
+        auto_rot = self.toggle_round_robin.isChecked()
+        self.toggle_round_robin.setToolTip(
+            tr("tooltip.toggle_round_robin_on") if auto_rot else tr("tooltip.toggle_round_robin_off")
+        )
+        self.rr_info.setText(tr("opt.mode") if auto_rot else tr("opt.mode_fixed"))
         self.spin_lbl.setText(tr("opt.req_per_acc"))
         update_treeview_headers(self.win)

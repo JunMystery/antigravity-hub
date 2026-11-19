@@ -15,7 +15,7 @@ from launcher_treeview_updater import (
     get_quota_color, _set_row_spinner, update_row_quota_display
 )
 from launcher_order_widget import OrderCellWidget
-from launcher_quota_fetcher import format_reset_time
+from launcher_quota_fetcher import format_reset_time, parse_quota_summary
 from launcher_quota_widget import QuotaCellWidget, QuotaProgressBar
 from datetime import datetime, timezone, timedelta
 
@@ -185,6 +185,93 @@ class TestQuotaDisplay(unittest.TestCase):
         self.assertEqual(ww.lbl_reset.text(), "Reset in 5d 2h")
         self.assertFalse(ww.bar.isHidden())
         self.assertEqual(ww.bar.val, 42)
+
+    def test_parse_quota_summary_separates_gemini_and_argon_weekly(self):
+        """Xác nhận Gemini Weekly không bị Argon Weekly ghi đè và Argon Weekly được tách riêng."""
+        now = datetime.now(timezone.utc)
+        reset_5h = (now + timedelta(hours=4, minutes=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        reset_wk = (now + timedelta(days=5, hours=18)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        reset_ag = (now + timedelta(days=6, hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        payload = {
+            "groups": [
+                {
+                    "displayName": "Gemini Models",
+                    "buckets": [
+                        {"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.60, "resetTime": reset_wk},
+                        {"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.83, "resetTime": reset_5h},
+                    ],
+                },
+                {
+                    "displayName": "Claude and GPT models",
+                    "buckets": [
+                        {"bucketId": "3p-weekly", "window": "weekly", "remainingFraction": 0.90, "resetTime": reset_wk},
+                    ],
+                },
+                {
+                    "displayName": "Gemini 4 Argon",
+                    "buckets": [
+                        {"bucketId": "gemini-argon-wtu-weekly", "window": "weekly", "remainingFraction": 0.94, "resetTime": reset_ag},
+                    ],
+                },
+            ]
+        }
+
+        q5_v, q5_t, q5_ok, q5_r, qw_v, qw_t, qw_ok, qw_r, qa_v, qa_t, qa_ok, qa_r = parse_quota_summary(payload)
+        self.assertEqual((q5_v, q5_t, q5_ok), (83, "83%", True))
+        self.assertEqual((qw_v, qw_t, qw_ok), (60, "60%", True))
+        self.assertEqual((qa_v, qa_t, qa_ok), (94, "94%", True))
+        self.assertEqual(qa_r, format_reset_time(reset_ag))
+
+        # Tài khoản không có nhóm Argon riêng -> Argon trả về '--', False
+        no_argon = {"groups": [payload["groups"][0]]}
+        _, _, _, _, qw_v2, _, _, _, qa_v2, qa_t2, qa_ok2, qa_r2 = parse_quota_summary(no_argon)
+        self.assertEqual(qw_v2, 60)
+        self.assertEqual((qa_v2, qa_t2, qa_ok2, qa_r2), (0, "--", False, ""))
+
+    def test_update_row_quota_display_7_columns_with_argon(self):
+        """Xác nhận update_row_quota_display cập nhật đủ 3 cột Quota (5h, Weekly, Argon) và nút ở cột 6."""
+        table = QTableWidget(1, 7)
+        item_order = QTableWidgetItem("1")
+        item_order.setData(Qt.ItemDataRole.UserRole, "prof_7col")
+        table.setItem(0, 0, item_order)
+
+        w5 = QuotaCellWidget()
+        ww = QuotaCellWidget()
+        wa = QuotaCellWidget()
+        table.setCellWidget(0, 3, w5)
+        table.setCellWidget(0, 4, ww)
+        table.setCellWidget(0, 5, wa)
+
+        btn_cell = QWidget()
+        btn_layout = QHBoxLayout(btn_cell)
+        btn = QPushButton("⠋")
+        btn.setEnabled(False)
+        btn_layout.addWidget(btn)
+        table.setCellWidget(0, 6, btn_cell)
+
+        class DummyWin:
+            def __init__(self, t):
+                self.treeview = t
+                self.refreshing_profile_ids = {"prof_7col"}
+
+        win = DummyWin(table)
+        update_row_quota_display(
+            win, "prof_7col",
+            83, "83%", True,
+            60, "60%", True,
+            q5_reset="Reset in 04:30",
+            qw_reset="Reset in 5d 18h",
+            qa_val=94, qa_text="94%", qa_valid=True, qa_reset="Reset in 6d 1h"
+        )
+
+        self.assertEqual(w5.lbl_percent.text(), "83%")
+        self.assertEqual(ww.lbl_percent.text(), "60%")
+        self.assertEqual(wa.lbl_percent.text(), "94%")
+        self.assertEqual(wa.lbl_reset.text(), "Reset in 6d 1h")
+        self.assertFalse(wa.bar.isHidden())
+        self.assertEqual(btn.text(), "⟳")
+        self.assertTrue(btn.isEnabled())
 
 if __name__ == "__main__":
     unittest.main()

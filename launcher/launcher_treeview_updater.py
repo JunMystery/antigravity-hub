@@ -16,7 +16,8 @@ def get_quota_color(val: float, is_valid: bool) -> str:
     return "#a6e3a1" if val >= 50.0 else "#f9e2af"
 
 def _set_row_spinner(table, row: int, char: str, color: QColor):
-    for col in (3, 4):
+    refresh_col = max(5, table.columnCount() - 1)
+    for col in range(3, refresh_col):
         widget = table.cellWidget(row, col)
         if widget and hasattr(widget, "set_spinner"):
             widget.set_spinner(char, color)
@@ -26,7 +27,7 @@ def _set_row_spinner(table, row: int, char: str, color: QColor):
                 item.setText(char)
                 if color:
                     item.setForeground(color)
-    cell = table.cellWidget(row, 5)
+    cell = table.cellWidget(row, refresh_col)
     btn = cell.findChild(QPushButton) if cell else None
     if btn:
         btn.setText(char)
@@ -75,33 +76,35 @@ def update_refreshing_spinners(win, spinner_char):
         if item and item.data(Qt.ItemDataRole.UserRole) in pending_pids:
             _set_row_spinner(table, row, spinner_char, pending_color)
 
-def update_row_quota_display(win, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid, q5_reset="", qw_reset=""):
+def _update_quota_cell(table, row: int, col: int, val, text: str, is_valid: bool, reset_text: str = ""):
+    widget = table.cellWidget(row, col)
+    if widget and hasattr(widget, "set_quota"):
+        widget.set_quota(val, text, is_valid, reset_text)
+    else:
+        item = table.item(row, col)
+        if item:
+            item.setText(text)
+            item.setForeground(QColor(get_quota_color(val, is_valid)))
+
+
+def update_row_quota_display(
+    win, profile_id, q5_val, q5_text, q5_valid, qw_val, qw_text, qw_valid,
+    q5_reset="", qw_reset="", qa_val=0, qa_text="--", qa_valid=False, qa_reset=""
+):
     """Cập nhật hiển thị Quota cho một hàng theo profile_id."""
     if hasattr(win, "refreshing_profile_ids"):
         win.refreshing_profile_ids.discard(profile_id)
     table = win.treeview
+    refresh_col = max(5, table.columnCount() - 1)
     for row in range(table.rowCount()):
         item = table.item(row, 0)
         if item and item.data(Qt.ItemDataRole.UserRole) == profile_id:
-            w5 = table.cellWidget(row, 3)
-            if w5 and hasattr(w5, "set_quota"):
-                w5.set_quota(q5_val, q5_text, q5_valid, q5_reset)
-            else:
-                item_q5 = table.item(row, 3)
-                if item_q5:
-                    item_q5.setText(q5_text)
-                    item_q5.setForeground(QColor(get_quota_color(q5_val, q5_valid)))
+            _update_quota_cell(table, row, 3, q5_val, q5_text, q5_valid, q5_reset)
+            _update_quota_cell(table, row, 4, qw_val, qw_text, qw_valid, qw_reset)
+            if table.columnCount() >= 7:
+                _update_quota_cell(table, row, 5, qa_val, qa_text, qa_valid, qa_reset)
 
-            ww = table.cellWidget(row, 4)
-            if ww and hasattr(ww, "set_quota"):
-                ww.set_quota(qw_val, qw_text, qw_valid, qw_reset)
-            else:
-                item_qw = table.item(row, 4)
-                if item_qw:
-                    item_qw.setText(qw_text)
-                    item_qw.setForeground(QColor(get_quota_color(qw_val, qw_valid)))
-
-            cell = table.cellWidget(row, 5)
+            cell = table.cellWidget(row, refresh_col)
             btn = cell.findChild(QPushButton) if cell else None
             if btn:
                 btn.setText("⟳")
