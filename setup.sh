@@ -16,6 +16,9 @@ if ! command -v node &>/dev/null; then
     exit 1
 fi
 
+echo "[0/4] Dừng Micro-Proxy (nếu đang chạy) trước khi cập nhật..."
+PYTHONPATH="$(pwd)/launcher:${PYTHONPATH}" python3 launcher/main.py --stop-proxy >/dev/null 2>&1 || true
+
 echo "[1/4] Cài đặt các thư viện Python (PyQt6, requests, cryptography)..."
 pip install --break-system-packages -r requirements.txt || pip install -r requirements.txt
 

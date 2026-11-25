@@ -5,15 +5,9 @@ const { sessionAffinity } = require("./session_affinity");
 const { destroyStream, attachClientCloseHandler, isSocketResetError } = require("./socket_cleanup");
 const { extractUsageMetadata, recordTokens, formatTokenCount } = require("./token_tracker");
 const {
-  isAiChatEndpoint,
-  rewriteChatPayload,
-  readErrorBody,
-  computeTtfbTimeoutMs,
-  hasFailoverBudget,
-  buildForwardHeaders,
-  create503AuthShieldPayload
+  isAiChatEndpoint, rewriteChatPayload, readErrorBody, computeTtfbTimeoutMs,
+  hasFailoverBudget, buildForwardHeaders, create503AuthShieldPayload
 } = require("./chat_payload_helper");
-
 const INACTIVITY_TIMEOUT_MS = 120000; // 120s sliding window cho thinking model context lon
 
 // Gui Chat Request voi Dedicated Agent, Dynamic Rewrite, Auto-Failover va Auth Shield
@@ -21,10 +15,17 @@ async function executeGoogleChatRequest(
   account, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context,
   attempt = 1, requestStartedAt = Date.now(), isFreshRetry = false
 ) {
-  const totalAccs = context.accounts.length || 1;
+  const totalAccs = context.maxFailoverAttempts || context.accounts.length || 1;
   const accName = account ? account.email : "UNKNOWN";
   const rawHost = origHeaders["host"] || "daily-cloudcode-pa.googleapis.com";
   const host = rawHost.split(":")[0];
+
+  function send503AuthShield() {
+    if (!clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+      clientRes.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
+      clientRes.end(create503AuthShieldPayload(503, accName));
+    }
+  }
 
   function terminateClient(reason) {
     if (clientRes.writableEnded || clientRes.destroyed || clientRes.closed) return;
@@ -111,7 +112,8 @@ async function executeGoogleChatRequest(
         resetTimeout(INACTIVITY_TIMEOUT_MS);
 
         // XU LY 401 UNAUTHORIZED: Ep cap moi token ngay lap tuc
-        if (gRes.statusCode === 401 && attempt <= totalAccs * 2) {
+        const max401Attempts = context.isAccountLocked ? 1 : totalAccs * 2;
+        if (gRes.statusCode === 401 && attempt <= max401Attempts) {
           clearAllTimeout();
           const errText = await readErrorBody(gRes);
           console.warn(`[AUTO-FAILOVER-401] [WARN] Tai khoan ${accName} bi HTTP 401: ${errText.slice(0, 150)}. Cap moi Token...`);
@@ -119,7 +121,9 @@ async function executeGoogleChatRequest(
           refreshGoogleAccessToken(account, context.config).then((refreshed) => {
             safeEndSession();
             if (isAborted || clientRes.destroyed || clientRes.closed) return;
+            if (!refreshed && context.isAccountLocked) { send503AuthShield(); return; }
             const retryAcc = refreshed ? account : context.nextAccount(context.sessionId, true, isSubagent, account);
+            if (!retryAcc) { send503AuthShield(); return; }
             if (refreshed) console.log(`[AUTO-FAILOVER-401] [OK] Cap moi token thanh cong cho ${accName}. Thu lai...`);
             else console.warn(`[AUTO-FAILOVER-401] [FAIL] Refresh that bai cho ${accName}. Chuyen tiep...`);
             executeGoogleChatRequest(retryAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1, requestStartedAt)
@@ -131,8 +135,8 @@ async function executeGoogleChatRequest(
           return;
         }
 
-        // XU LY 429/403/404: Auto-Failover sang account tiep theo
-        if ((gRes.statusCode === 429 || gRes.statusCode === 403 || gRes.statusCode === 404) && attempt <= totalAccs) {
+        // XU LY 429/403/404: Auto-Failover sang account tiep theo (bo qua neu tai khoan dang bi khoa co dinh)
+        if ((gRes.statusCode === 429 || gRes.statusCode === 403 || gRes.statusCode === 404) && !context.isAccountLocked && attempt <= totalAccs) {
           clearAllTimeout();
           safeEndSession();
           if (account && (gRes.statusCode === 429 || gRes.statusCode === 403)) {
@@ -142,6 +146,13 @@ async function executeGoogleChatRequest(
           console.warn(`[AUTO-FAILOVER] [WARN] Tai khoan ${accName} bi HTTP ${gRes.statusCode}: ${errText.slice(0, 200)}!`);
 
           const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
+          if (!nextAcc) {
+            if (!clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
+              clientRes.writeHead(gRes.statusCode, { "Content-Type": gRes.headers["content-type"] || "application/json" });
+              clientRes.end(errText);
+            }
+            return;
+          }
           context.writeLiveStatus({
             active: true, status: "FAILOVER", error_account: accName, error_code: gRes.statusCode,
             message: `[WARN] ${accName} bi loi ${gRes.statusCode} -> Dang doi sang ${nextAcc?.email}...`,
@@ -161,20 +172,17 @@ async function executeGoogleChatRequest(
           clearAllTimeout();
           safeEndSession();
           console.error(`[AUTH-SHIELD] [PROTECT] Google tra ve 401 tren [${accName}]. Masking sang 503!`);
-          if (!clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
-            clientRes.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
-            clientRes.end(create503AuthShieldPayload(503, accName));
-          }
+          send503AuthShield();
           return;
         }
 
-        const isPaused = Boolean(context.rotationPaused);
-        context.writeLiveStatus({
-          active: false, timestamp: Date.now(), account_email: accName, account_name: account?.name || accName,
-          current_req: context.currentAccRequestsServed, requests_per_account: context.requestsPerAccount,
-          total_requests: context.requestCount, endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`,
-          method: reqMethod, status: isPaused ? "paused" : "standby", paused: isPaused, statusCode: gRes.statusCode
-        });
+        if (context.buildLiveStatus) {
+          context.writeLiveStatus(context.buildLiveStatus({
+            account, account_email: accName, account_name: account?.name || accName,
+            endpoint: `${tag} ${(reqUrl || "/").split("?")[0]}`, method: reqMethod,
+            statusCode: gRes.statusCode, model_routed: context.modelRouted || ""
+          }));
+        }
 
         let tailBuffer = "";
         let latestMeta = null;
@@ -195,7 +203,6 @@ async function executeGoogleChatRequest(
           console.log(`[TOKENS] [${accName}] Sent: ${formatTokenCount(latestMeta.sent)} | Recv: ${formatTokenCount(latestMeta.received)} | Cached: ${formatTokenCount(latestMeta.cached)}`);
           latestMeta = null;
         }
-
         gRes.on("end", () => { clearAllTimeout(); commitRecordedTokens(); safeEndSession(); activeGRes = null; });
         gRes.on("close", () => {
           clearAllTimeout();
@@ -238,7 +245,7 @@ async function executeGoogleChatRequest(
         clearAllTimeout();
         if (!clientRes.headersSent) {
           agentPool.destroyAgentForAccount(account);
-          if (attempt > 1 || (Date.now() - attemptStartedAt) >= 15000) {
+          if (!context.isAccountLocked && (attempt > 1 || (Date.now() - attemptStartedAt) >= 15000)) {
             context.nextAccount(context.sessionId, true, isSubagent, account);
           }
         }
@@ -266,8 +273,9 @@ async function executeGoogleChatRequest(
         return;
       }
 
-      if (attempt <= totalAccs && hasFailoverBudget(requestStartedAt, bodyBuffer) && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed) {
-        const nextAcc = context.nextAccount(context.sessionId, true, isSubagent, account);
+      const nextAcc = (!context.isAccountLocked && attempt <= totalAccs && hasFailoverBudget(requestStartedAt, bodyBuffer) && !clientRes.headersSent && !clientRes.destroyed && !clientRes.closed)
+        ? context.nextAccount(context.sessionId, true, isSubagent, account) : null;
+      if (nextAcc) {
         console.warn(`[AUTO-FAILOVER-NET] [WARN] Loi socket (${e.message}). Doi sang ${nextAcc?.email}...`);
         executeGoogleChatRequest(nextAcc, bodyBuffer, reqUrl, reqMethod, origHeaders, clientRes, context, attempt + 1, requestStartedAt, false)
           .catch((err) => terminateClient(err?.message || "Failover network retry failed"));

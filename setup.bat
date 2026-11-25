@@ -21,6 +21,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+echo [0/4] Dang dung Micro-Proxy (neu dang chay) truoc khi cap nhat...
+set "PYTHONPATH=%~dp0launcher;%PYTHONPATH%"
+python launcher\main.py --stop-proxy >nul 2>nul
+
 echo [1/4] Dang cai dat cac thu vien Python (PyQt6, requests, cryptography)...
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt

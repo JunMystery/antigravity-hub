@@ -112,7 +112,7 @@ module.exports = {
 };
 
 if (require.main === module) {
-  const targetDir = path.join(__dirname, "certs");
+  const targetDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(__dirname, "certs");
   ensureRootCertificate(targetDir);
   console.log(`[CERT] Root CA: ${path.join(targetDir, "ca.crt")}`);
 }

@@ -37,6 +37,7 @@ from launcher_log_manager import prune_logs
 from launcher_sidebar import SidebarNav
 from launcher_view_dashboard import DashboardView
 from launcher_view_accounts import AccountsView
+from launcher_view_model_rules import ModelRulesView
 from launcher_view_logs import LogsView
 from launcher_view_settings import SettingsView
 from launcher_tray import TrayManager, handle_hide_on_launch, handle_close_event, clean_exit
@@ -70,16 +71,19 @@ class LauncherWindow(QMainWindow):
         self.stack = QStackedWidget(self)
         self.view_dashboard = DashboardView(self)
         self.view_accounts = AccountsView(self)
+        self.view_model_rules = ModelRulesView(self)
         self.view_logs = LogsView(self)
         self.view_settings = SettingsView(self)
         self.stack.addWidget(self.view_dashboard)
         self.stack.addWidget(self.view_accounts)
+        self.stack.addWidget(self.view_model_rules)
         self.stack.addWidget(self.view_logs)
         self.stack.addWidget(self.view_settings)
 
         self.view_map = {
             "dashboard": self.view_dashboard,
             "accounts": self.view_accounts,
+            "model_rules": self.view_model_rules,
             "logs": self.view_logs,
             "settings": self.view_settings
         }
@@ -118,6 +122,8 @@ class LauncherWindow(QMainWindow):
         if target:
             if view_id == "logs" and hasattr(target, "load_logs"):
                 target.load_logs()
+            elif view_id == "model_rules" and hasattr(target, "refresh_view"):
+                target.refresh_view()
             self.stack.setCurrentWidget(target)
             self.sidebar.set_active_view(view_id)
 
@@ -135,6 +141,8 @@ class LauncherWindow(QMainWindow):
         self.view_accounts.retranslate_ui()
         if hasattr(self, "view_dashboard"):
             self.view_dashboard.retranslate_ui()
+        if hasattr(self, "view_model_rules"):
+            self.view_model_rules.retranslate_ui()
         if hasattr(self, "view_logs"):
             self.view_logs.retranslate_ui()
         if hasattr(self, "view_settings"):
@@ -177,6 +185,13 @@ class LauncherWindow(QMainWindow):
 
     def on_toggle_proxy_btn(self):
         send_proxy_cmd(self, "toggle_pause") if is_proxy_running() else ensure_proxy_running()
+        self.update_live_monitor()
+
+    def on_pin_account_selected(self, account_key: str):
+        if account_key == "AUTO":
+            send_proxy_cmd(self, "unpin_account")
+        else:
+            send_proxy_cmd(self, "pin_account", {"email": account_key, "id": account_key})
         self.update_live_monitor()
 
     def update_live_monitor(self):

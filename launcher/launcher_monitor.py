@@ -6,6 +6,7 @@ Module xây dựng và điều khiển khung giám sát trực tiếp (Live Moni
 import os
 import json
 import time
+import urllib.parse
 import urllib.request
 from PyQt6.QtWidgets import (
     QGroupBox, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFrame
@@ -19,13 +20,20 @@ from launcher_i18n import tr
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 CMD_FILE = os.path.join(CONFIG_DIR, "proxy_cmd.json")
 
-def send_proxy_cmd(win, cmd: str):
+def send_proxy_cmd(win, cmd: str, params: dict = None):
     """Gửi lệnh điều khiển trực tiếp tới Micro-Proxy qua HTTP hoặc tệp trung gian."""
     sent = False
+    query_params = {"cmd": cmd}
+    if params:
+        for k, v in params.items():
+            if v is not None and v != "":
+                query_params[k] = str(v)
+
     try:
-        url = f"http://127.0.0.1:{PROXY_PORT}/_proxy_action?cmd={cmd}"
+        qs = urllib.parse.urlencode(query_params)
+        url = f"http://127.0.0.1:{PROXY_PORT}/_proxy_action?{qs}"
         req = urllib.request.Request(url, method="GET")
-        with urllib.request.urlopen(req, timeout=0.15) as resp:
+        with urllib.request.urlopen(req, timeout=0.25) as resp:
             if resp.status == 200:
                 sent = True
     except Exception:
@@ -33,8 +41,10 @@ def send_proxy_cmd(win, cmd: str):
 
     if not sent:
         try:
+            payload = dict(query_params)
+            payload["ts"] = time.time()
             with open(CMD_FILE, "w", encoding="utf-8") as f:
-                json.dump({"cmd": cmd, "ts": time.time()}, f)
+                json.dump(payload, f)
         except Exception:
             pass
 

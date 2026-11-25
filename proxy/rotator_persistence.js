@@ -106,10 +106,19 @@ function resolveRestoredAccount(accounts, savedState) {
   return { accountIndex: fallbackIdx, currentAccRequestsServed: 0, matched: false };
 }
 
+function resolvePinnedKey(savedState) {
+  if (!savedState || typeof savedState !== "object") return null;
+  const email = String(savedState.pinned_account_email || "").trim();
+  const id = String(savedState.pinned_account_id || "").trim();
+  if (!email && !id) return null;
+  return { id, email };
+}
+
 module.exports = {
   saveRotatorState,
   saveRotatorStateAsync,
   restoreRotatorState,
   cleanOrphanedState,
-  resolveRestoredAccount
+  resolveRestoredAccount,
+  resolvePinnedKey
 };

@@ -7,6 +7,7 @@ Tái xuất (re-export) các đường dẫn và hằng số từ launcher_paths
 import os
 import re
 import json
+import time
 import shutil
 
 # Re-export các đường dẫn, binary detector và hằng số cấu hình từ launcher_paths
@@ -28,73 +29,104 @@ def slugify(text: str) -> str:
     return text or "account"
 
 def _secure_write(path: str, content: dict) -> None:
-    os.makedirs(CONFIG_DIR, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(content, f, indent=2, ensure_ascii=False)
-    if os.name != "nt":
+    """Ghi JSON an toàn qua tệp tạm (atomic os.replace) và giữ bản dự phòng .bak."""
+    parent_dir = os.path.dirname(os.path.abspath(path)) or CONFIG_DIR
+    os.makedirs(parent_dir, exist_ok=True)
+    payload = json.dumps(content, indent=2, ensure_ascii=False)
+    if os.path.exists(path):
         try:
-            os.chmod(path, 0o600)
+            if os.path.getsize(path) > 2:
+                with open(path, "r", encoding="utf-8") as rf:
+                    json.load(rf)
+                shutil.copy2(path, f"{path}.bak")
         except Exception:
             pass
+
+    tmp_path = f"{path}.{os.getpid()}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+    if os.name != "nt":
+        try:
+            os.chmod(tmp_path, 0o600)
+        except Exception:
+            pass
+    os.replace(tmp_path, path)
+
+def _read_json_with_backup(path: str):
+    """Đọc tệp JSON; tự động khôi phục từ .bak nếu tệp chính bị hỏng hoặc thất lạc."""
+    bak_path = f"{path}.bak"
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                parsed = json.load(f)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            try:
+                shutil.copy2(path, f"{path}.corrupt.{int(time.time())}")
+            except Exception:
+                pass
+    if os.path.exists(bak_path):
+        try:
+            with open(bak_path, "r", encoding="utf-8") as bf:
+                bak_data = json.load(bf)
+            if isinstance(bak_data, dict):
+                _secure_write(path, bak_data)
+                return bak_data
+        except Exception:
+            pass
+    return None
+
+def _default_profiles_data() -> dict:
+    return {
+        "settings": {
+            "use_proxy": True,
+            "round_robin_enabled": True,
+            "requests_per_account": 1,
+            "language": "vi",
+            "log_retention_days": 30
+        },
+        "profiles": []
+    }
 
 def load_data() -> dict:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(PROFILES_BASE_DIR, exist_ok=True)
-    if not os.path.exists(PROFILES_FILE):
-        default_data = {
-            "settings": {
-                "use_proxy": True,
-                "round_robin_enabled": True,
-                "requests_per_account": 1,
-                "language": "vi",
-                "log_retention_days": 30
-            },
-            "profiles": []
-        }
-        save_data(default_data)
+    data = _read_json_with_backup(PROFILES_FILE)
+    if data is None:
+        default_data = _default_profiles_data()
+        if not os.path.exists(PROFILES_FILE):
+            save_data(default_data)
         return default_data
-    try:
-        with open(PROFILES_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            data.setdefault("settings", {})
-            data["settings"].setdefault("requests_per_account", 1)
-            data["settings"].setdefault("round_robin_enabled", True)
-            data["settings"].setdefault("language", "vi")
-            data["settings"].setdefault("app_binary", APP_BINARY)
-            data["settings"].setdefault("ide_binary", find_ide_binary())
-            data["settings"].setdefault("log_retention_days", 30)
-            profiles = data.get("profiles", [])
-            for idx, p in enumerate(profiles):
-                if "order" not in p or not isinstance(p["order"], int):
-                    p["order"] = idx + 1
-            profiles.sort(key=lambda x: x.get("order", 99999))
-            for idx, p in enumerate(profiles):
-                p["order"] = idx + 1
-            data["profiles"] = profiles
-            return data
-    except Exception:
-        return {
-            "settings": {
-                "use_proxy": True,
-                "round_robin_enabled": True,
-                "requests_per_account": 1,
-                "language": "vi"
-            },
-            "profiles": []
-        }
+
+    data.setdefault("settings", {})
+    data["settings"].setdefault("requests_per_account", 1)
+    data["settings"].setdefault("round_robin_enabled", True)
+    data["settings"].setdefault("language", "vi")
+    data["settings"].setdefault("app_binary", APP_BINARY)
+    data["settings"].setdefault("ide_binary", find_ide_binary())
+    data["settings"].setdefault("log_retention_days", 30)
+    profiles = data.get("profiles", [])
+    for idx, p in enumerate(profiles):
+        if "order" not in p or not isinstance(p["order"], int):
+            p["order"] = idx + 1
+    profiles.sort(key=lambda x: x.get("order", 99999))
+    for idx, p in enumerate(profiles):
+        p["order"] = idx + 1
+    data["profiles"] = profiles
+    return data
 
 def save_data(data: dict) -> None:
     _secure_write(PROFILES_FILE, data)
 
 def load_accounts() -> list:
-    if not os.path.exists(ACCOUNTS_FILE):
+    parsed = _read_json_with_backup(ACCOUNTS_FILE)
+    if not parsed:
         return []
-    try:
-        with open(ACCOUNTS_FILE, "r", encoding="utf-8") as f:
-            raw_accs = json.load(f).get("accounts", [])
-            return [a for a in raw_accs if isinstance(a, dict)]
-    except Exception:
-        return []
+    raw_accs = parsed.get("accounts", [])
+    return [a for a in raw_accs if isinstance(a, dict)]
 
 def save_accounts(accounts: list) -> None:
     _secure_write(ACCOUNTS_FILE, {"accounts": accounts})

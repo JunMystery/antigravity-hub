@@ -138,7 +138,7 @@ def show_about_prompt(parent=None):
     try:
         from launcher import __version__
     except ImportError:
-        __version__ = "0.1.2"
+        __version__ = "0.2.0"
     q_parent = parent if isinstance(parent, QWidget) else None
     dlg = QMessageBox(q_parent)
     dlg.setWindowTitle(tr("dialog.about_title"))

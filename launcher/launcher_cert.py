@@ -15,12 +15,13 @@ try:
 except ImportError:
     from launcher_paths import PROXY_DIR, ROOT_CA
 
-CERTS_DIR = os.path.join(PROXY_DIR, "certs")
+CERTS_DIR = os.path.dirname(ROOT_CA)
+LEGACY_CERTS_DIR = os.path.join(PROXY_DIR, "certs")
 COMBINED_CA_BUNDLE = os.path.join(CERTS_DIR, "ca-bundle.crt")
 
 
 def ensure_certificates() -> bool:
-    """Đảm bảo chứng chỉ Root CA (ca.crt, ca.key) đã được sinh."""
+    """Đảm bảo chứng chỉ Root CA (ca.crt, ca.key) đã được sinh hoặc di dời sang CONFIG_DIR."""
     ca_crt = ROOT_CA
     ca_key = os.path.join(CERTS_DIR, "ca.key")
 
@@ -28,6 +29,16 @@ def ensure_certificates() -> bool:
         return True
 
     os.makedirs(CERTS_DIR, exist_ok=True)
+    legacy_crt = os.path.join(LEGACY_CERTS_DIR, "ca.crt")
+    legacy_key = os.path.join(LEGACY_CERTS_DIR, "ca.key")
+    if os.path.exists(legacy_crt) and os.path.exists(legacy_key) and os.path.abspath(LEGACY_CERTS_DIR) != os.path.abspath(CERTS_DIR):
+        try:
+            shutil.copy2(legacy_crt, ca_crt)
+            shutil.copy2(legacy_key, ca_key)
+            return True
+        except Exception:
+            pass
+
     provider_script = os.path.join(PROXY_DIR, "cert_provider.js")
     if not os.path.exists(provider_script):
         return False
@@ -35,7 +46,7 @@ def ensure_certificates() -> bool:
     creationflags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
     try:
         res = subprocess.run(
-            ["node", provider_script],
+            ["node", provider_script, CERTS_DIR],
             cwd=PROXY_DIR,
             capture_output=True,
             text=True,

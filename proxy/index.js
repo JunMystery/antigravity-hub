@@ -29,15 +29,18 @@ const { isAiChatEndpoint, executeGoogleChatRequest } = require("./chat_handler")
 const { extractModelName } = require("./chat_payload_helper");
 const { handleOAuthRoute } = require("./oauth_handler");
 const { AccountRotator } = require("./account_rotator");
+const { buildLiveStatusPayload } = require("./account_routing");
+const { buildRequestContext } = require("./model_rule_engine");
 const { agentPool } = require("./agent_pool");
 const { sessionAffinity } = require("./session_affinity");
 const { destroyStream, attachConnectTunnelCleanup, handleClientError } = require("./socket_cleanup");
 
 const PROXY_PORT = 20130;
 const userHome = os.homedir();
-const CERTS_DIR = path.join(__dirname, "certs");
 const isWin = process.platform === "win32" && process.env.APPDATA;
 const CONFIG_DIR = isWin ? path.join(process.env.APPDATA, "antigravity-launcher") : path.join(userHome, ".config", "antigravity-launcher");
+const CERTS_DIR = path.join(CONFIG_DIR, "certs");
+const LEGACY_CERTS_DIR = path.join(__dirname, "certs");
 const ACCOUNTS_FILE = path.join(CONFIG_DIR, "accounts.json");
 const PROFILES_FILE = path.join(CONFIG_DIR, "profiles.json");
 const PROFILES_BASE_DIR = isWin ? path.join(process.env.APPDATA, "Antigravity-Profiles") : path.join(userHome, ".config", "Antigravity-Profiles");
@@ -60,7 +63,21 @@ function writeLiveStatus(info) {
   } catch (_) {}
 }
 
+function migrateLegacyCerts() {
+  const targetCrt = path.join(CERTS_DIR, "ca.crt");
+  const targetKey = path.join(CERTS_DIR, "ca.key");
+  if (fs.existsSync(targetCrt) && fs.existsSync(targetKey)) return;
+  const legacyCrt = path.join(LEGACY_CERTS_DIR, "ca.crt");
+  const legacyKey = path.join(LEGACY_CERTS_DIR, "ca.key");
+  if (fs.existsSync(legacyCrt) && fs.existsSync(legacyKey)) {
+    fs.mkdirSync(CERTS_DIR, { recursive: true });
+    fs.copyFileSync(legacyCrt, targetCrt);
+    fs.copyFileSync(legacyKey, targetKey);
+  }
+}
+
 console.log("[MITM-INIT] Khoi tao chung chi SSL cho *.googleapis.com...");
+migrateLegacyCerts();
 const leafCredentials = createLeafCertificate(CERTS_DIR);
 console.log("[MITM-INIT] [OK] Chung chi SSL da san sang.");
 
@@ -70,20 +87,8 @@ setInterval(() => rotator.loadState(), 5000);
 const curInitAcc = rotator.getCurrentAccount();
 console.log(`[ROUND-ROBIN] Da nap ${rotator.accounts.length} tai khoan active (Khoi tao tai: [${curInitAcc?.email || "Chua co"}], nguong: ${rotator.requestsPerAccount} req/tai khoan).`);
 
-function getRequestContext(sessionId = null, isSubagent = false) {
-  return {
-    config: CONFIG, sessionId, isSubagent,
-    get accounts() { return rotator.accounts; },
-    getCurrentAccount: () => rotator.getCurrentAccount(),
-    nextAccount: (sId = null, isFail = false, isSub = false, failedAcc = null) =>
-      rotator.nextAccount(sId || sessionId, isFail, isSub !== undefined ? isSub : isSubagent, failedAcc),
-    get accountIndex() { return rotator.accountIndex; },
-    get currentAccRequestsServed() { return rotator.currentAccRequestsServed; },
-    get requestsPerAccount() { return rotator.requestsPerAccount; },
-    get requestCount() { return rotator.requestCount; },
-    get rotationPaused() { return rotator.rotationPaused; },
-    writeLiveStatus
-  };
+function getRequestContext(sessionId = null, isSubagent = false, allocation = null) {
+  return buildRequestContext(rotator, CONFIG, writeLiveStatus, sessionId, isSubagent, allocation);
 }
 
 const oauthContext = {
@@ -173,19 +178,22 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
     const reqNum = allocation.requestNumber;
     const tag = isSub ? "[SUBAGENT]" : "[MAIN]";
     const stickyFlag = allocation.isSticky ? "[STICKY] " : (allocation.isNewSubagent ? "[NEW-SUB] " : "");
-    const modelName = extractModelName(reqUrl, bodyBuffer);
+    const modelName = allocation.modelName || extractModelName(reqUrl, bodyBuffer);
     const modelTag = modelName ? `[MODEL: ${modelName}] ` : "";
+    const lockTag = allocation.lockReason === "model_rule"
+      ? `[RULE: ${allocation.matchedRule}] `
+      : (allocation.lockReason === "pinned" ? "[PINNED] " : "");
 
-    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${req.method} ${modelTag}${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
+    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${lockTag}${req.method} ${modelTag}${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
 
-    writeLiveStatus({
-      active: true, timestamp: Date.now(), account_email: accName,
+    writeLiveStatus(buildLiveStatusPayload(rotator, {
+      active: true, account: currentAcc, account_email: accName,
       account_name: currentAcc?.name || accName, current_req: servedCount,
-      requests_per_account: rotator.requestsPerAccount, total_requests: reqNum,
-      endpoint: `${tag} ${reqUrl.split("?")[0]}`, method: req.method, status: "sending"
-    });
+      total_requests: reqNum, endpoint: `${tag} ${reqUrl.split("?")[0]}`,
+      method: req.method, status: "sending", model_routed: allocation.matchedRule || ""
+    }));
 
-    executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(allocation.sessionId, isSub))
+    executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(allocation.sessionId, isSub, allocation))
       .catch((err) => {
         console.error(`[CHAT-HANDLER-ERR] Loi khong mong doi tren [${accName}]:`, err.message);
         if (!res.headersSent && !res.destroyed && !res.closed) {
@@ -207,7 +215,7 @@ function checkCmdFile() {
       fs.unlinkSync(CMD_FILE);
       if (content) {
         const cmdObj = JSON.parse(content);
-        if (cmdObj.cmd) rotator.handleCommand(cmdObj.cmd, null, writeLiveStatus);
+        if (cmdObj.cmd) rotator.handleCommand(cmdObj.cmd, null, writeLiveStatus, cmdObj);
       }
     } catch (_) {}
   }
@@ -222,8 +230,8 @@ const proxyServer = http.createServer(async (req, res) => {
 
     const parsedUrl = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
     if (parsedUrl.pathname === "/_proxy_action") {
-      const cmd = parsedUrl.searchParams.get("cmd");
-      rotator.handleCommand(cmd, res, writeLiveStatus);
+      const params = Object.fromEntries(parsedUrl.searchParams.entries());
+      rotator.handleCommand(params.cmd, res, writeLiveStatus, params);
       return;
     }
   } catch (_) {}
@@ -255,12 +263,11 @@ proxyServer.on("clientError", handleClientError);
 
 proxyServer.listen(PROXY_PORT, "127.0.0.1", () => {
   const initAcc = rotator.getCurrentAccount() || rotator.accounts[0];
-  writeLiveStatus({
-    active: false, timestamp: Date.now(), account_email: initAcc?.email || "San sang",
-    account_name: initAcc?.name || initAcc?.email || "San sang", current_req: rotator.currentAccRequestsServed,
-    requests_per_account: rotator.requestsPerAccount, total_requests: rotator.requestCount,
-    endpoint: "", method: "", status: rotator.rotationPaused ? "paused" : "standby", paused: rotator.rotationPaused
-  });
+  writeLiveStatus(buildLiveStatusPayload(rotator, {
+    account: initAcc,
+    account_email: initAcc?.email || "San sang",
+    account_name: initAcc?.name || initAcc?.email || "San sang"
+  }));
 
   console.log(`\n============================================================`);
   console.log(`[PROXY] Antigravity Standalone Round Robin Proxy dang chay (Port ${PROXY_PORT})`);

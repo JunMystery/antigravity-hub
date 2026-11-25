@@ -18,8 +18,11 @@ from launcher_proxy import is_proxy_running
 from launcher_widget import CompactStatusBar
 from launcher_activity_widget import ActivityLogsPanel
 from launcher_token_widget import TokenMetricsBar
+from launcher_model_discovery import collect_available_accounts
 
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
+ROTATOR_STATE_FILE = os.path.join(CONFIG_DIR, "rotator_state.json")
+CMD_FILE = os.path.join(CONFIG_DIR, "proxy_cmd.json")
 
 
 class _CardAdapter:
@@ -54,6 +57,7 @@ class DashboardView(QWidget):
         # 1. Thanh tóm tắt trạng thái liền khối (Compact Inline Bar)
         self.status_bar = CompactStatusBar(self)
         self.status_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.status_bar.account_selected.connect(self.win.on_pin_account_selected)
         layout.addWidget(self.status_bar)
 
         # Thuộc tính tương thích ngược
@@ -140,6 +144,25 @@ class DashboardView(QWidget):
         if hasattr(self, "activity_panel"):
             self.activity_panel.retranslate_ui()
 
+    def _sync_account_selector(self, pinned_email: str = "", is_paused: bool = False):
+        avail = collect_available_accounts(self.win.data)
+        options = [("AUTO", tr("dashboard.auto_rr"))]
+        deactive_map = {}
+        for item in avail:
+            email = item["email"]
+            deactive_map[email.lower()] = not item["enabled"]
+            label = email if item["enabled"] else f"{email} {tr('dashboard.deactive_tag')}"
+            options.append((email, label))
+
+        selected_key = "AUTO"
+        if is_paused and pinned_email:
+            for item in avail:
+                if item["email"].lower() == pinned_email.lower():
+                    selected_key = item["email"]
+                    break
+        self.status_bar.set_account_options(options, selected_key)
+        return deactive_map
+
     def update_dashboard(self):
         """Cập nhật dữ liệu từ live_status.json và proxy.log lên Dashboard."""
         status_lbl = tr("monitor.col_status") or "Trạng thái"
@@ -150,7 +173,34 @@ class DashboardView(QWidget):
             self.token_bar.refresh_metrics()
 
         if not is_proxy_running():
-            self.status_bar.set_state("● STOPPED", "#f38ba8", "", tr("monitor.acc_unavailable"), "--", turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl)
+            persisted_pinned = ""
+            persisted_paused = False
+            if os.path.exists(CMD_FILE):
+                try:
+                    with open(CMD_FILE, "r", encoding="utf-8") as f:
+                        pending = json.load(f)
+                    if pending.get("cmd") == "pin_account":
+                        persisted_paused = True
+                        persisted_pinned = pending.get("email") or pending.get("id") or ""
+                    elif pending.get("cmd") in ("unpin_account", "resume"):
+                        persisted_paused = False
+                        persisted_pinned = ""
+                except Exception:
+                    pass
+            elif os.path.exists(ROTATOR_STATE_FILE):
+                try:
+                    with open(ROTATOR_STATE_FILE, "r", encoding="utf-8") as f:
+                        st = json.load(f)
+                    persisted_paused = bool(st.get("rotation_paused", False))
+                    persisted_pinned = st.get("pinned_account_email", "") or ""
+                except Exception:
+                    pass
+            self._sync_account_selector(persisted_pinned, persisted_paused)
+            self.status_bar.set_state(
+                "● STOPPED", "#f38ba8", "", tr("monitor.acc_unavailable"), "--",
+                turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
+                acc_sub="Offline", turn_sub="--"
+            )
             self.card_status.set_value("● STOPPED")
             self.card_acc.set_value(tr("monitor.acc_unavailable"))
             self.card_turn.set_value("--")
@@ -160,7 +210,6 @@ class DashboardView(QWidget):
             self._read_recent_logs()
             return
 
-        self.btn_next.setEnabled(True)
         if os.path.exists(STATUS_FILE):
             try:
                 with open(STATUS_FILE, "r", encoding="utf-8") as f:
@@ -168,28 +217,50 @@ class DashboardView(QWidget):
                 status = data.get("status", "standby")
                 is_paused = bool(data.get("paused", False) or status == "paused")
                 acc = data.get("account_email") or data.get("account_name") or "--"
+                pinned_email = data.get("pinned_email") or (acc if is_paused and acc != "--" else "")
+                is_pinned = bool(is_paused and pinned_email)
+                model_routed = data.get("model_routed") or ""
                 cur_req = data.get("current_req", 0)
                 max_req = data.get("requests_per_account", 1)
                 tot_req = data.get("total_requests", 0)
 
-                turn_str = f"{cur_req}/{max_req}"
+                deactive_map = self._sync_account_selector(pinned_email, is_pinned)
+                is_deactive = deactive_map.get((pinned_email or acc).lower(), False)
+
+                turn_str = "∞" if is_pinned else f"{cur_req}/{max_req}"
+                turn_sub = tr("dashboard.turn_continuous") if is_pinned else tr("dashboard.turn_rr")
                 if is_paused:
-                    self.status_bar.set_state("● PAUSED", "#f9e2af", "20130", acc, turn_str, turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl)
+                    acc_sub = tr("dashboard.pinned_deactive_sub") if is_deactive else tr("dashboard.pinned_sub")
+                    self.status_bar.set_state(
+                        "● PAUSED", "#f9e2af", "20130", acc, turn_str,
+                        turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
+                        acc_sub=acc_sub, turn_sub=turn_sub
+                    )
                     self.card_status.set_value("● PAUSED")
                     self.btn_toggle_proxy.setText(tr("btn.resume_rotation"))
+                    self.btn_next.setEnabled(False)
                 else:
                     is_active = (status == "sending")
                     st_text = "● ACTIVE" if is_active else "● STANDBY"
                     st_color = "#a6e3a1" if is_active else "#89b4fa"
-                    self.status_bar.set_state(st_text, st_color, "20130", acc, turn_str, turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl)
+                    acc_sub = tr("dashboard.model_rule_sub", rule=model_routed) if model_routed else tr("dashboard.rr_sub", acc=acc)
+                    self.status_bar.set_state(
+                        st_text, st_color, "20130", acc, turn_str,
+                        turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
+                        acc_sub=acc_sub, turn_sub=turn_sub
+                    )
                     self.card_status.set_value(st_text)
                     self.btn_toggle_proxy.setText(tr("btn.pause_rotation"))
+                    self.btn_next.setEnabled(True)
 
                 self.card_acc.set_value(acc)
                 self.card_turn.set_value(turn_str)
                 self.card_total.set_value(str(tot_req))
             except Exception:
                 pass
+        else:
+            self._sync_account_selector("", False)
+            self.btn_next.setEnabled(True)
         self._read_recent_logs()
 
     def _read_recent_logs(self):

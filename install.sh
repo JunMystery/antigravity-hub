@@ -11,7 +11,10 @@ echo "=== Cài đặt Antigravity Launcher & Micro-Proxy ==="
 command -v python3 >/dev/null 2>&1 || { echo "[ERROR] Cần cài đặt python3 trước."; exit 1; }
 command -v node >/dev/null 2>&1 || { echo "[ERROR] Cần cài đặt nodejs (v18+) trước."; exit 1; }
 
-# 2. Cài đặt dependencies cho Micro-Proxy và Python Launcher
+# 2. Dừng proxy nếu đang chạy và cài đặt dependencies
+echo "[0/5] Dừng Micro-Proxy (nếu đang chạy) trước khi cập nhật..."
+PYTHONPATH="${SCRIPT_DIR}/launcher:${PYTHONPATH}" python3 "${SCRIPT_DIR}/launcher/main.py" --stop-proxy >/dev/null 2>&1 || true
+
 echo "[1/5] Cài đặt dependencies cho Micro-Proxy (Node.js)..."
 cd "${SCRIPT_DIR}/proxy"
 if [ -f "package.json" ]; then

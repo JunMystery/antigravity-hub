@@ -89,6 +89,22 @@ async function fetchProjectId(accessToken) {
   return "aicode-consumers";
 }
 
+function writeJsonAtomic(filePath, obj, mode = null) {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  if (fs.existsSync(filePath)) {
+    try {
+      if (fs.statSync(filePath).size > 2) {
+        JSON.parse(fs.readFileSync(filePath, "utf8"));
+        fs.copyFileSync(filePath, `${filePath}.bak`);
+      }
+    } catch (_) {}
+  }
+  const tmpFile = `${filePath}.${process.pid}.tmp`;
+  fs.writeFileSync(tmpFile, JSON.stringify(obj, null, 2), mode ? { encoding: "utf8", mode } : "utf8");
+  fs.renameSync(tmpFile, filePath);
+}
+
 function saveAuthorizedAccount(accountData, { accountsFile, profilesFile, profilesBaseDir }) {
   const accRaw = fs.existsSync(accountsFile) ? JSON.parse(fs.readFileSync(accountsFile, "utf8")) : { accounts: [] };
   const accounts = accRaw.accounts || [];
@@ -106,7 +122,7 @@ function saveAuthorizedAccount(accountData, { accountsFile, profilesFile, profil
   if (existing) Object.assign(existing, newAcc);
   else accounts.push(newAcc);
   accRaw.accounts = accounts;
-  fs.writeFileSync(accountsFile, JSON.stringify(accRaw, null, 2), { encoding: "utf8", mode: 0o600 });
+  writeJsonAtomic(accountsFile, accRaw, 0o600);
 
   const profRaw = fs.existsSync(profilesFile) ? JSON.parse(fs.readFileSync(profilesFile, "utf8")) : { profiles: [] };
   const profiles = profRaw.profiles || [];
@@ -117,7 +133,7 @@ function saveAuthorizedAccount(accountData, { accountsFile, profilesFile, profil
     profMatch.name = accountData.email;
     profMatch.enabled = true;
     profRaw.profiles = profiles;
-    fs.writeFileSync(profilesFile, JSON.stringify(profRaw, null, 2), "utf8");
+    writeJsonAtomic(profilesFile, profRaw);
     return newAcc;
   }
 
@@ -143,7 +159,7 @@ function saveAuthorizedAccount(accountData, { accountsFile, profilesFile, profil
     quota_timestamp: 0
   });
   profRaw.profiles = profiles;
-  fs.writeFileSync(profilesFile, JSON.stringify(profRaw, null, 2), "utf8");
+  writeJsonAtomic(profilesFile, profRaw);
   return newAcc;
 }
 

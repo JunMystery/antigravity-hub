@@ -13,7 +13,7 @@ QWidget {
     font-size: 13px;
     color: #cdd6f4;
 }
-QWidget#dashboard_view, QWidget#accounts_view, QWidget#settings_view {
+QWidget#dashboard_view, QWidget#accounts_view, QWidget#model_rules_view, QWidget#settings_view {
     background-color: #1e1e2e;
 }
 QWidget#sidebar_nav {

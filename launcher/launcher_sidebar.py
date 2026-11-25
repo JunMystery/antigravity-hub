@@ -66,6 +66,7 @@ class SidebarNav(QWidget):
         nav_items = [
             ("dashboard", tr("nav.dashboard")),
             ("accounts", tr("nav.accounts")),
+            ("model_rules", tr("nav.model_rules")),
             ("logs", tr("nav.logs")),
             ("settings", tr("nav.settings"))
         ]
@@ -94,7 +95,7 @@ class SidebarNav(QWidget):
         layout.addWidget(self.combo_lang)
 
         layout.addSpacing(10)
-        self.lbl_footer = QLabel("v0.1.4 • JunMystery")
+        self.lbl_footer = QLabel("v0.2.0 • JunMystery")
         self.lbl_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_footer.setStyleSheet("color: #6c7086; font-size: 10px; font-weight: 500;")
         layout.addWidget(self.lbl_footer)
@@ -116,6 +117,6 @@ class SidebarNav(QWidget):
             self.combo_lang.blockSignals(True)
             self.combo_lang.setCurrentIndex(idx)
             self.combo_lang.blockSignals(False)
-        for vid in ("dashboard", "accounts", "logs", "settings"):
+        for vid in ("dashboard", "accounts", "model_rules", "logs", "settings"):
             if vid in self.buttons:
                 self.buttons[vid].setText(tr(f"nav.{vid}"))

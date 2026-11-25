@@ -136,8 +136,8 @@ def get_proxy_script_path() -> str:
     return custom if os.path.exists(custom) else bundled
 
 def get_root_ca_path() -> str:
-    """Xác định đường dẫn chứng chỉ Root CA tương đối theo repo."""
-    return os.path.join(PROXY_DIR, "certs", "ca.crt")
+    """Lưu Root CA trong thư mục cấu hình người dùng (CONFIG_DIR/certs) để không mất khi update repo."""
+    return os.path.join(CONFIG_DIR, "certs", "ca.crt")
 
 ROOT_CA = get_root_ca_path()
 PROXY_SCRIPT = get_proxy_script_path()
