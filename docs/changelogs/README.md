@@ -17,6 +17,7 @@ Antigravity Hub follows [Semantic Versioning 2.0.0](https://semver.org/):
 
 | Version | Release Date | Highlights | Changelog Link |
 |---|---|---|---|
+| **v0.2.1** | 2026-11-26 | Unified Global & Model Rules Round Robin (`requests_per_account` per rule or global-inherited, persisted `rule_states` in `rotator_state.json`, cyclic intra-rule failover, Model Rule precedence over Pause/Pin, synced Dashboard turn indicator, modular UI split, and audit hardening). | [v0.2.1 Changelog](./v0.2.1.md) |
 | **v0.2.0** | 2026-11-25 | Dashboard inline account pinning with strict failover lock, dedicated Model Rules view (multi-model `patterns` + `contains`/`exact`/`regex`, ordered multi-account pools, parallel model discovery, route tester), atomic `.tmp`/`.bak` persistence, `CONFIG_DIR/certs/` Root CA migration, and `--stop-proxy` setup hardening. | [v0.2.0 Changelog](./v0.2.0.md) |
 | **v0.1.4** | 2026-11-18 | Concurrent agent hang & timeout/abort-loop remediation: budget-aware TTFB failover (`25s -> 22s -> remaining`), 120s thinking window, 15s idle socket eviction & pool purge, hop-by-hop header stripping, pre-header abort rotation, and Dashboard startup fix. | [v0.1.4 Changelog](./v0.1.4.md) |
 | **v0.1.3** | 2026-11-18 | Universal plain-JSON Backup & Restore engine (.zip archive with Replace/Merge modes & cross-OS path remapping), removal of machine-bound encryption/keyring, 9Router importer decommission, and Settings View scroll/height GUI fix. | [v0.1.3 Changelog](./v0.1.3.md) |

@@ -14,7 +14,9 @@ const {
   saveRotatorStateAsync,
   restoreRotatorState,
   resolveRestoredAccount,
-  resolvePinnedKey
+  resolvePinnedKey,
+  serializeRuleStates,
+  restoreRuleStates
 } = require("./rotator_persistence");
 
 // Quan ly xoay vong tai khoan Round Robin, ghim tai khoan co dinh va dinh tuyen theo Model
@@ -93,14 +95,18 @@ class AccountRotator {
     const modelName = extractModelName(reqUrl, bodyBuffer);
     const pool = this.allAccounts.length > 0 ? this.allAccounts : this.accounts;
 
-    const ruleMatch = allocateForModelRule(modelName, this.modelRules, pool, this.ruleCursors);
+    const ruleMatch = allocateForModelRule(modelName, this.modelRules, pool, this.ruleCursors, this.requestsPerAccount);
     if (ruleMatch) {
       this.requestCount++;
       this.saveRotatorStateDebounced();
       return {
         account: ruleMatch.account,
         isSubagent: isSub,
-        servedCount: 1,
+        servedCount: ruleMatch.servedCount,
+        requestsPerAccount: ruleMatch.requestsPerAccount,
+        ruleStrategy: ruleMatch.ruleStrategy,
+        ruleCursorKey: ruleMatch.ruleCursorKey,
+        startIndex: ruleMatch.startIndex,
         requestNumber: this.requestCount,
         sessionId,
         isLocked: !ruleMatch.fallbackToGlobal && ruleMatch.rulePool.length <= 1,
@@ -129,6 +135,8 @@ class AccountRotator {
       account: current,
       isSubagent: isSub,
       servedCount: served,
+      requestsPerAccount: this.requestsPerAccount,
+      ruleStrategy: "",
       requestNumber: this.requestCount,
       sessionId,
       isLocked: Boolean(this.rotationPaused),
@@ -149,6 +157,7 @@ class AccountRotator {
       rotation_paused: this.rotationPaused,
       pinned_account_email: this.pinnedAccountKey?.email || "",
       pinned_account_id: this.pinnedAccountKey?.id || "",
+      rule_states: serializeRuleStates(this.ruleCursors, this.modelRules),
       updated_at: Date.now()
     };
   }
@@ -182,6 +191,9 @@ class AccountRotator {
     if (typeof state.total_requests === "number") this.requestCount = state.total_requests;
     if (typeof state.rotation_paused === "boolean") this.rotationPaused = state.rotation_paused;
     this.pinnedAccountKey = resolvePinnedKey(state);
+    if (state.rule_states && typeof state.rule_states === "object") {
+      this.ruleCursors = restoreRuleStates(state.rule_states);
+    }
 
     if (this.accounts.length > 0) {
       const resolved = resolveRestoredAccount(this.accounts, state);

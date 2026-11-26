@@ -17,9 +17,12 @@ from launcher_storage import save_data
 from launcher_monitor import send_proxy_cmd
 from launcher_model_discovery import (
     collect_available_accounts, discover_models_from_logs,
-    fetch_all_accounts_models, get_rule_patterns_py, simulate_model_route
+    fetch_all_accounts_models, simulate_model_route
 )
 from launcher_model_rule_editor import ModelRuleEditorDialog
+from launcher_model_rule_formatter import (
+    format_rule_pattern_cell, format_rule_strategy_cell, format_rule_accounts_cell
+)
 
 
 def _wrap_cell_widgets(widgets, center=False):
@@ -172,24 +175,16 @@ class ModelRulesView(QWidget):
             chk.toggled.connect(lambda state, i=idx: self.toggle_rule(i, state))
             self.tbl_rules.setCellWidget(row, 1, _wrap_cell_widgets([chk], center=True))
 
-            pats = get_rule_patterns_py(rule)
-            pat_sum = ", ".join(pats[:2]) + (f" (+{len(pats) - 2})" if len(pats) > 2 else "")
-            custom_name = str(rule.get("name") or "").strip()
-            auto_legacy = f"{pats[0]} (+{len(pats) - 1})" if len(pats) > 1 else (pats[0] if pats else "")
-            show_pat = pat_sum if (not custom_name or custom_name in (pat_sum, auto_legacy)) else f"{custom_name} ({pat_sum})"
-            pat_item = QTableWidgetItem(show_pat)
-            pat_item.setToolTip((f"{custom_name}\n" if custom_name else "") + "\n".join(pats))
+            pat_text, pat_tip = format_rule_pattern_cell(rule)
+            pat_item = QTableWidgetItem(pat_text)
+            pat_item.setToolTip(pat_tip)
             self.tbl_rules.setItem(row, 2, pat_item)
             mtype = str(rule.get("match_type") or "contains").lower()
             self.tbl_rules.setItem(row, 3, QTableWidgetItem(tr(f"model_rules.match_{mtype}")))
-            strat = str(rule.get("strategy") or "priority").lower()
-            self.tbl_rules.setItem(row, 4, QTableWidgetItem(tr("model_rules.strategy_round_robin" if strat == "round_robin" else "model_rules.strategy_priority")))
-            accs = rule.get("accounts") or ([{"email": rule.get("account_email", "")}] if rule.get("account_email") else [])
-            acc_emails = [a.get("email") or a.get("id") or "" for a in accs if a.get("email") or a.get("id")]
-            acc_sum = ", ".join(acc_emails[:2]) + (f" (+{len(acc_emails) - 2})" if len(acc_emails) > 2 else "")
-            fb_suffix = f" | {tr('model_rules.badge_fallback')}" if rule.get("fallback_to_global") else ""
-            acc_item = QTableWidgetItem(f"{acc_sum}{fb_suffix}")
-            acc_item.setToolTip(", ".join(acc_emails))
+            self.tbl_rules.setItem(row, 4, QTableWidgetItem(format_rule_strategy_cell(rule)))
+            acc_text, acc_tip = format_rule_accounts_cell(rule)
+            acc_item = QTableWidgetItem(acc_text)
+            acc_item.setToolTip(acc_tip)
             self.tbl_rules.setItem(row, 5, acc_item)
 
             btn_edit = _make_btn(tr("model_rules.btn_edit"), lambda _, i=idx: self.open_rule_editor(edit_idx=i), compact=True)

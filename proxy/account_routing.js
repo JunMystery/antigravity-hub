@@ -64,7 +64,7 @@ function buildLiveStatusPayload(rotator, extra = {}) {
     account_email: extra.account_email ?? cur?.email ?? "San sang",
     account_name: extra.account_name ?? cur?.name ?? cur?.email ?? "San sang",
     current_req: extra.current_req ?? rotator.currentAccRequestsServed,
-    requests_per_account: rotator.requestsPerAccount,
+    requests_per_account: extra.requests_per_account ?? rotator.requestsPerAccount,
     total_requests: extra.total_requests ?? rotator.requestCount,
     endpoint: extra.endpoint ?? "",
     method: extra.method ?? "",
@@ -74,6 +74,7 @@ function buildLiveStatusPayload(rotator, extra = {}) {
     pinned_email: pinnedEmail,
     pinned_id: pinnedId,
     model_routed: extra.model_routed || "",
+    model_rule_strategy: extra.model_rule_strategy || "",
     ...(extra.statusCode !== undefined ? { statusCode: extra.statusCode } : {})
   };
 }

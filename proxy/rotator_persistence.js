@@ -114,11 +114,68 @@ function resolvePinnedKey(savedState) {
   return { id, email };
 }
 
+function serializeRuleStates(ruleCursors, modelRules = null) {
+  if (!(ruleCursors instanceof Map) || ruleCursors.size === 0) return {};
+  const validKeys = new Set();
+  if (Array.isArray(modelRules)) {
+    modelRules.forEach((r, idx) => {
+      if (!r || typeof r !== "object") return;
+      const firstPat = (Array.isArray(r.patterns) ? r.patterns.find((p) => String(p || "").trim()) : "") || r.pattern || "";
+      validKeys.add(r.id || `${idx}:${String(firstPat).trim()}`);
+    });
+  }
+  const out = {};
+  for (const [key, val] of ruleCursors.entries()) {
+    if (Array.isArray(modelRules) && !validKeys.has(key)) continue;
+    if (typeof val === "number") {
+      out[key] = {
+        account_index: Math.max(0, Math.floor(val)),
+        current_req_served: 0,
+        last_account_email: "",
+        last_account_id: ""
+      };
+    } else if (val && typeof val === "object") {
+      out[key] = {
+        account_index: Math.max(0, parseInt(val.accountIndex, 10) || 0),
+        current_req_served: Math.max(0, parseInt(val.served, 10) || 0),
+        last_account_email: String(val.lastAccountEmail || ""),
+        last_account_id: String(val.lastAccountId || "")
+      };
+    }
+  }
+  return out;
+}
+
+function restoreRuleStates(rawRuleStates) {
+  const map = new Map();
+  if (!rawRuleStates || typeof rawRuleStates !== "object") return map;
+  for (const [key, val] of Object.entries(rawRuleStates)) {
+    if (typeof val === "number") {
+      map.set(key, {
+        accountIndex: Math.max(0, Math.floor(val)),
+        served: 0,
+        lastAccountId: "",
+        lastAccountEmail: ""
+      });
+    } else if (val && typeof val === "object") {
+      map.set(key, {
+        accountIndex: Math.max(0, parseInt(val.account_index, 10) || 0),
+        served: Math.max(0, parseInt(val.current_req_served, 10) || 0),
+        lastAccountId: String(val.last_account_id || "").trim(),
+        lastAccountEmail: String(val.last_account_email || "").trim()
+      });
+    }
+  }
+  return map;
+}
+
 module.exports = {
   saveRotatorState,
   saveRotatorStateAsync,
   restoreRotatorState,
   cleanOrphanedState,
   resolveRestoredAccount,
-  resolvePinnedKey
+  resolvePinnedKey,
+  serializeRuleStates,
+  restoreRuleStates
 };

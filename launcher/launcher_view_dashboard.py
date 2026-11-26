@@ -220,6 +220,7 @@ class DashboardView(QWidget):
                 pinned_email = data.get("pinned_email") or (acc if is_paused and acc != "--" else "")
                 is_pinned = bool(is_paused and pinned_email)
                 model_routed = data.get("model_routed") or ""
+                rule_strategy = str(data.get("model_rule_strategy") or "").lower()
                 cur_req = data.get("current_req", 0)
                 max_req = data.get("requests_per_account", 1)
                 tot_req = data.get("total_requests", 0)
@@ -227,10 +228,26 @@ class DashboardView(QWidget):
                 deactive_map = self._sync_account_selector(pinned_email, is_pinned)
                 is_deactive = deactive_map.get((pinned_email or acc).lower(), False)
 
-                turn_str = "∞" if is_pinned else f"{cur_req}/{max_req}"
-                turn_sub = tr("dashboard.turn_continuous") if is_pinned else tr("dashboard.turn_rr")
+                if model_routed:
+                    if rule_strategy == "priority":
+                        turn_str = "—"
+                        turn_sub = tr("dashboard.turn_priority")
+                    else:
+                        turn_str = f"{cur_req}/{max_req}"
+                        turn_sub = tr("dashboard.turn_rr")
+                elif is_pinned:
+                    turn_str = "∞"
+                    turn_sub = tr("dashboard.turn_continuous")
+                else:
+                    turn_str = f"{cur_req}/{max_req}"
+                    turn_sub = tr("dashboard.turn_rr")
+
                 if is_paused:
-                    acc_sub = tr("dashboard.pinned_deactive_sub") if is_deactive else tr("dashboard.pinned_sub")
+                    acc_sub = (
+                        tr("dashboard.model_rule_sub", rule=model_routed)
+                        if model_routed
+                        else (tr("dashboard.pinned_deactive_sub") if is_deactive else tr("dashboard.pinned_sub"))
+                    )
                     self.status_bar.set_state(
                         "● PAUSED", "#f9e2af", "20130", acc, turn_str,
                         turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,

@@ -60,6 +60,8 @@ function sanitizeModelRules(rawRules) {
       const rawType = String(r.match_type || "contains").toLowerCase();
       const matchType = ["contains", "exact", "regex"].includes(rawType) ? rawType : "contains";
       const strategy = String(r.strategy || "").toLowerCase() === "round_robin" ? "round_robin" : "priority";
+      const rawReqs = parseInt(r.requests_per_account, 10);
+      const requestsPerAccount = Number.isFinite(rawReqs) && rawReqs > 0 ? rawReqs : 0;
       const accounts = (Array.isArray(r.accounts) ? r.accounts : [])
         .filter((a) => a && typeof a === "object" && (a.id || a.email))
         .map((a) => ({ id: a.id ? String(a.id) : "", email: a.email ? String(a.email) : "" }));
@@ -75,6 +77,7 @@ function sanitizeModelRules(rawRules) {
         patterns,
         match_type: matchType,
         strategy,
+        requests_per_account: requestsPerAccount,
         fallback_to_global: Boolean(r.fallback_to_global),
         accounts,
         account_id: legacyId || accounts[0]?.id || "",

@@ -175,6 +175,7 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
     const isSub = allocation.isSubagent;
     const accName = currentAcc ? currentAcc.email : "UNKNOWN";
     const servedCount = allocation.servedCount;
+    const reqThreshold = allocation.requestsPerAccount || rotator.requestsPerAccount;
     const reqNum = allocation.requestNumber;
     const tag = isSub ? "[SUBAGENT]" : "[MAIN]";
     const stickyFlag = allocation.isSticky ? "[STICKY] " : (allocation.isNewSubagent ? "[NEW-SUB] " : "");
@@ -184,13 +185,15 @@ const internalHttpsServer = https.createServer(leafCredentials, (req, res) => {
       ? `[RULE: ${allocation.matchedRule}] `
       : (allocation.lockReason === "pinned" ? "[PINNED] " : "");
 
-    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${lockTag}${req.method} ${modelTag}${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${rotator.requestsPerAccount} req)`);
+    console.log(`[ROUND-ROBIN #${reqNum}] ${tag} ${stickyFlag}${lockTag}${req.method} ${modelTag}${reqUrl.split("?")[0]} -> [ACC: ${accName}] (${servedCount}/${reqThreshold} req)`);
 
     writeLiveStatus(buildLiveStatusPayload(rotator, {
       active: true, account: currentAcc, account_email: accName,
       account_name: currentAcc?.name || accName, current_req: servedCount,
+      requests_per_account: reqThreshold,
       total_requests: reqNum, endpoint: `${tag} ${reqUrl.split("?")[0]}`,
-      method: req.method, status: "sending", model_routed: allocation.matchedRule || ""
+      method: req.method, status: "sending", model_routed: allocation.matchedRule || "",
+      model_rule_strategy: allocation.ruleStrategy || ""
     }));
 
     executeGoogleChatRequest(currentAcc, bodyBuffer, reqUrl, req.method, req.headers, res, getRequestContext(allocation.sessionId, isSub, allocation))

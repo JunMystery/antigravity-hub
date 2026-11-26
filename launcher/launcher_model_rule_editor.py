@@ -10,26 +10,16 @@ import uuid
 import threading
 from PyQt6.QtWidgets import (
     QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QComboBox,
-    QCheckBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox
+    QCheckBox, QPushButton, QSpinBox, QMessageBox
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import pyqtSignal
 
 from launcher_i18n import tr
 from launcher_model_discovery import (
     collect_available_accounts, fetch_all_accounts_models, get_rule_patterns_py
 )
 from launcher_model_selector import MultiModelSelector
-
-
-def _make_compact_btn(text: str, slot, fixed_size: tuple = None) -> QPushButton:
-    btn = QPushButton(text)
-    if fixed_size:
-        btn.setFixedSize(fixed_size[0], fixed_size[1])
-        btn.setStyleSheet("padding: 0px;")
-    else:
-        btn.setStyleSheet("padding: 2px 8px;")
-    btn.clicked.connect(slot)
-    return btn
+from launcher_rule_account_picker import RuleAccountPicker
 
 
 class ModelRuleEditorDialog(QDialog):
@@ -90,22 +80,29 @@ class ModelRuleEditorDialog(QDialog):
         opts_row.addWidget(self.combo_strategy, 1)
         layout.addLayout(opts_row)
 
-        acc_header = QHBoxLayout()
-        acc_header.addWidget(QLabel(tr("model_rules.accounts_hint")))
-        acc_header.addStretch(1)
-        self.btn_acc_all = _make_compact_btn(tr("model_rules.btn_select_all"), lambda: self._select_accounts("all"))
-        self.btn_acc_active = _make_compact_btn(tr("model_rules.btn_select_active"), lambda: self._select_accounts("active"))
-        self.btn_acc_none = _make_compact_btn(tr("model_rules.btn_select_none"), lambda: self._select_accounts("none"))
-        self.btn_acc_up = _make_compact_btn("▲", lambda: self._move_account(-1), (28, 24))
-        self.btn_acc_down = _make_compact_btn("▼", lambda: self._move_account(1), (28, 24))
-        for btn in (self.btn_acc_all, self.btn_acc_active, self.btn_acc_none, self.btn_acc_up, self.btn_acc_down):
-            acc_header.addWidget(btn)
-        layout.addLayout(acc_header)
+        self.row_rr_reqs = QWidget()
+        rr_layout = QHBoxLayout(self.row_rr_reqs)
+        rr_layout.setContentsMargins(0, 0, 0, 0)
+        rr_layout.setSpacing(8)
+        self.spin_req_per_account = QSpinBox()
+        self.spin_req_per_account.setRange(0, 500)
+        self.spin_req_per_account.setSpecialValueText(tr("model_rules.inherit_global"))
+        try:
+            saved_reqs = max(0, int(self._rule.get("requests_per_account") or 0))
+        except (TypeError, ValueError):
+            saved_reqs = 0
+        self.spin_req_per_account.setValue(saved_reqs)
+        rr_layout.addWidget(QLabel(tr("model_rules.req_per_account")))
+        rr_layout.addWidget(self.spin_req_per_account)
+        rr_layout.addStretch(1)
+        layout.addWidget(self.row_rr_reqs)
+        self.combo_strategy.currentIndexChanged.connect(self._sync_strategy_controls)
+        self._sync_strategy_controls()
 
-        self.list_accounts = QListWidget()
-        self._populate_account_list(preset_account)
-        self.list_accounts.itemChanged.connect(lambda _: self._on_accounts_changed(auto_query=True))
-        layout.addWidget(self.list_accounts, 1)
+        self.account_picker = RuleAccountPicker(self._accounts, self._rule, preset_account, parent=self)
+        self.list_accounts = self.account_picker.list_accounts
+        self.account_picker.accounts_changed.connect(self._on_accounts_changed)
+        layout.addWidget(self.account_picker, 1)
 
         if preset_account and preset_models and str(preset_account.get("email") or "").strip():
             p_email = str(preset_account["email"]).strip()
@@ -148,67 +145,17 @@ class ModelRuleEditorDialog(QDialog):
         self._is_alive = False
         super().done(result)
 
-    def _populate_account_list(self, preset_account: dict = None):
-        selected_refs = list(self._rule.get("accounts") or [])
-        if not selected_refs and (self._rule.get("account_id") or self._rule.get("account_email")):
-            selected_refs = [{"id": self._rule.get("account_id", ""), "email": self._rule.get("account_email", "")}]
-        if not selected_refs and preset_account and (preset_account.get("id") or preset_account.get("email")):
-            selected_refs = [preset_account]
-
-        selected_order = []
-        remaining = list(self._accounts)
-        for ref in selected_refs:
-            rem_next = []
-            ref_email = str(ref.get("email") or "").lower()
-            ref_id = str(ref.get("id") or "").lower()
-            for acc in remaining:
-                if (ref_email and acc["email"].lower() == ref_email) or (ref_id and acc["id"].lower() == ref_id):
-                    selected_order.append((acc, True))
-                else:
-                    rem_next.append(acc)
-            remaining = rem_next
-
-        for acc, is_checked in selected_order + [(acc, False) for acc in remaining]:
-            suffix = "" if acc.get("enabled", True) else f" [{tr('model_rules.status_deactive')}]"
-            item = QListWidgetItem(f"{acc['email']}{suffix}")
-            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            item.setCheckState(Qt.CheckState.Checked if is_checked else Qt.CheckState.Unchecked)
-            item.setData(Qt.ItemDataRole.UserRole, {"id": acc["id"], "email": acc["email"]})
-            item.setData(Qt.ItemDataRole.UserRole + 1, acc.get("enabled", True) is not False)
-            self.list_accounts.addItem(item)
+    def _sync_strategy_controls(self):
+        self.row_rr_reqs.setVisible(self.combo_strategy.currentData() == "round_robin")
 
     def _get_selected_accounts(self) -> list:
-        return [
-            self.list_accounts.item(idx).data(Qt.ItemDataRole.UserRole)
-            for idx in range(self.list_accounts.count())
-            if self.list_accounts.item(idx).checkState() == Qt.CheckState.Checked
-        ]
+        return self.account_picker.get_selected_accounts()
 
     def _select_accounts(self, mode: str):
-        self.list_accounts.blockSignals(True)
-        try:
-            for idx in range(self.list_accounts.count()):
-                item = self.list_accounts.item(idx)
-                is_active = bool(item.data(Qt.ItemDataRole.UserRole + 1))
-                checked = True if mode == "all" else (is_active if mode == "active" else False)
-                item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
-        finally:
-            self.list_accounts.blockSignals(False)
-        self._on_accounts_changed(auto_query=True)
+        self.account_picker.select_accounts(mode)
 
     def _move_account(self, delta: int):
-        row = self.list_accounts.currentRow()
-        target = row + delta
-        if row < 0 or target < 0 or target >= self.list_accounts.count():
-            return
-        self.list_accounts.blockSignals(True)
-        try:
-            item = self.list_accounts.takeItem(row)
-            self.list_accounts.insertItem(target, item)
-            self.list_accounts.setCurrentRow(target)
-        finally:
-            self.list_accounts.blockSignals(False)
-        self._on_accounts_changed(auto_query=False)
+        self.account_picker.move_account(delta)
 
     def _on_accounts_changed(self, auto_query: bool = True):
         selected = self._get_selected_accounts()
@@ -277,13 +224,16 @@ class ModelRuleEditorDialog(QDialog):
                     )
                     return
 
+        strategy = self.combo_strategy.currentData() or "priority"
+        req_per_account = int(self.spin_req_per_account.value()) if strategy == "round_robin" else 0
         self._result_rule = {
             "id": str(self._rule.get("id") or f"rule_{uuid.uuid4().hex[:8]}"),
             "name": self.edit_name.text().strip(),
             "pattern": patterns[0],
             "patterns": patterns,
             "match_type": match_type,
-            "strategy": self.combo_strategy.currentData() or "priority",
+            "strategy": strategy,
+            "requests_per_account": req_per_account,
             "fallback_to_global": self.chk_fallback.isChecked(),
             "accounts": selected,
             "account_id": selected[0]["id"],
