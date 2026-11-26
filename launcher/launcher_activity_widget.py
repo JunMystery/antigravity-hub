@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from launcher_i18n import tr
-from launcher_log_manager import get_log_path, parse_log_lines
+from launcher_log_manager import get_log_path, parse_log_lines, read_tail_lines
 from launcher_token_delegate import TokenInOutDelegate
 
 MAX_RECENT_LOGS = 50
@@ -84,6 +84,7 @@ class ActivityLogsPanel(QWidget):
         super().__init__(parent)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self._last_log_size = 0
+        self._last_log_sig = None
         self.active_filter = "ALL"
         self._history: List[Dict[str, Any]] = []
 
@@ -146,30 +147,34 @@ class ActivityLogsPanel(QWidget):
         self.active_filter = tag.upper()
 
     def _populate_table(self, items: List[Dict[str, Any]]):
-        self.table.setRowCount(0)
-        for item in items:
-            r = self.table.rowCount()
-            self.table.insertRow(r)
-            model = item.get("model", "")
-            in_out = item.get("in_out", "-- / --")
-            when = item.get("timestamp", "")
+        self.table.setUpdatesEnabled(False)
+        try:
+            self.table.setRowCount(0)
+            for item in items:
+                r = self.table.rowCount()
+                self.table.insertRow(r)
+                model = item.get("model", "")
+                in_out = item.get("in_out", "-- / --")
+                when = item.get("timestamp", "")
 
-            it_model = QTableWidgetItem(model)
-            it_in_out = QTableWidgetItem(in_out)
-            it_when = QTableWidgetItem(when)
+                it_model = QTableWidgetItem(model)
+                it_in_out = QTableWidgetItem(in_out)
+                it_when = QTableWidgetItem(when)
 
-            it_model.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-            it_in_out.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            it_when.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                it_model.setTextAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+                it_in_out.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                it_when.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-            it_model.setForeground(Qt.GlobalColor.white)
-            it_in_out.setForeground(Qt.GlobalColor.lightGray)
-            it_when.setForeground(Qt.GlobalColor.gray)
+                it_model.setForeground(Qt.GlobalColor.white)
+                it_in_out.setForeground(Qt.GlobalColor.lightGray)
+                it_when.setForeground(Qt.GlobalColor.gray)
 
-            self.table.setItem(r, 0, it_model)
-            self.table.setItem(r, 1, it_in_out)
-            self.table.setItem(r, 2, it_when)
-        self.table.scrollToBottom()
+                self.table.setItem(r, 0, it_model)
+                self.table.setItem(r, 1, it_in_out)
+                self.table.setItem(r, 2, it_when)
+            self.table.scrollToBottom()
+        finally:
+            self.table.setUpdatesEnabled(True)
 
     def update_logs(self, parsed_logs: List[Dict[str, Any]]) -> None:
         """Cập nhật nhật ký vào bảng 3 cột, gắn kết tokens và giới hạn 50 dòng."""
@@ -224,12 +229,13 @@ class ActivityLogsPanel(QWidget):
         if not os.path.exists(log_path):
             return
         try:
-            sz = os.path.getsize(log_path)
-            if sz == self._last_log_size:
+            st = os.stat(log_path)
+            sig = (st.st_mtime_ns, st.st_size)
+            if sig == self._last_log_sig:
                 return
-            self._last_log_size = sz
-            with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-                lines = f.readlines()[-1000:]
+            self._last_log_sig = sig
+            self._last_log_size = st.st_size
+            lines = read_tail_lines(log_path, max_lines=1000)
             parsed = parse_log_lines(lines)
             self.update_logs(parsed)
         except Exception:

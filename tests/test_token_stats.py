@@ -225,11 +225,33 @@ class TestTokenWidgets(unittest.TestCase):
         self.assertEqual(bar.card_sent.height(), 48)
 
     def test_locked_minimum_sizes(self):
-        from launcher.launcher_window import LauncherWindow
+        import sys
+        ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        LAUNCHER_DIR = os.path.join(ROOT_DIR, "launcher")
+        if LAUNCHER_DIR not in sys.path:
+            sys.path.insert(0, LAUNCHER_DIR)
+        import launcher_storage
+        import launcher_window
         from launcher.launcher_full_log_dialog import FullLogDialog
-        win = LauncherWindow()
-        self.assertEqual(win.minimumWidth(), 760)
-        self.assertEqual(win.minimumHeight(), 480)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            cfg_dir = os.path.join(tmp_dir, "config")
+            prof_base = os.path.join(tmp_dir, "profiles_base")
+            os.makedirs(cfg_dir, exist_ok=True)
+            with patch.object(launcher_storage, "CONFIG_DIR", cfg_dir), \
+                 patch.object(launcher_storage, "PROFILES_FILE", os.path.join(cfg_dir, "profiles.json")), \
+                 patch.object(launcher_storage, "ACCOUNTS_FILE", os.path.join(cfg_dir, "accounts.json")), \
+                 patch.object(launcher_storage, "PROFILES_BASE_DIR", prof_base), \
+                 patch.object(launcher_window, "PROFILES_BASE_DIR", prof_base), \
+                 patch.object(launcher_window, "ensure_proxy_running"), \
+                 patch.object(launcher_window, "prune_logs"), \
+                 patch.object(launcher_window, "create_desktop_shortcut"):
+                win = launcher_window.LauncherWindow()
+                win.monitor_timer.stop()
+                win.auto_quota_timer.stop()
+                self.assertEqual(win.minimumWidth(), 760)
+                self.assertEqual(win.minimumHeight(), 480)
+                win.close()
 
         dlg = FullLogDialog()
         self.assertEqual(dlg.minimumWidth(), 600)

@@ -15,6 +15,7 @@ const OAUTH_I18N = {
     successTitle: "Đăng nhập thành công!",
     successMsg: (email, name) => `Tài khoản <b>${email}</b> (${name}) đã được liên kết thành công vào Antigravity Hub.`,
     successHint: "Tab này sẽ tự động đóng ngay lập tức. Nếu trình duyệt không tự đóng, vui lòng nhấn nút bên dưới.",
+    fallbackHint: "Tài khoản đã được liên kết. Bạn có thể đóng tab này an toàn (Ctrl+W).",
     authFailedTitle: "Ủy quyền thất bại",
     authFailedMsg: (err) => `Google trả về lỗi: ${err}`,
     expiredTitle: "Phiên hết hạn hoặc không hợp lệ",
@@ -27,6 +28,7 @@ const OAUTH_I18N = {
     successTitle: "Login Successful!",
     successMsg: (email, name) => `Account <b>${email}</b> (${name}) has been successfully linked to Antigravity Hub.`,
     successHint: "This tab will close automatically. If your browser blocks auto-close, click the button below.",
+    fallbackHint: "Your account is linked. You can safely close this tab (Ctrl+W).",
     authFailedTitle: "Authorization Failed",
     authFailedMsg: (err) => `Google returned an error: ${err}`,
     expiredTitle: "Session Expired or Invalid",
@@ -74,18 +76,31 @@ function renderHtml(title, message, isSuccess = true, lang = "vi") {
   const iconSvg = isSuccess
     ? `<svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>`
     : `<svg width="72" height="72" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>`;
+  const pageTitle = isSuccess ? `Antigravity Hub - ${title}` : title;
   const hint = isSuccess ? copy.successHint : copy.errorHint;
+  const fallbackHintJson = JSON.stringify(copy.fallbackHint);
   const autoCloseScript = isSuccess
     ? `<script>
     function closeTab() {
-      try { window.open('', '_self', ''); window.close(); } catch (_) {}
+      try { window.close(); window.open('', '_self', ''); window.close(); } catch (_) {}
     }
     closeTab();
-    window.addEventListener('DOMContentLoaded', () => { closeTab(); setTimeout(closeTab, 120); setTimeout(closeTab, 500); });
+    window.addEventListener('DOMContentLoaded', () => {
+      closeTab();
+      setTimeout(closeTab, 120);
+      setTimeout(() => {
+        if (!window.closed) {
+          const hintEl = document.getElementById('oauth-hint');
+          const btnEl = document.getElementById('btn-close-tab');
+          if (hintEl) hintEl.textContent = ${fallbackHintJson};
+          if (btnEl) btnEl.style.display = 'none';
+        }
+      }, 1200);
+    });
     window.addEventListener('load', () => { closeTab(); setTimeout(closeTab, 250); });
   </script>`
     : `<script>
-    function closeTab() { try { window.open('', '_self', ''); window.close(); } catch (_) {} }
+    function closeTab() { try { window.close(); window.open('', '_self', ''); window.close(); } catch (_) {} }
   </script>`;
 
   return `<!DOCTYPE html>
@@ -93,7 +108,7 @@ function renderHtml(title, message, isSuccess = true, lang = "vi") {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
+  <title>${escapeHtml(pageTitle)}</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #1e1e2e; color: #cdd6f4; text-align: center; }
     .card { background: #24273a; padding: 40px 36px; border-radius: 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.45); max-width: 460px; width: calc(100% - 32px); border: 1px solid #363a4f; }
@@ -111,8 +126,8 @@ function renderHtml(title, message, isSuccess = true, lang = "vi") {
     <div class="icon-wrap">${iconSvg}</div>
     <h1>${escapeHtml(title)}</h1>
     <p>${message}</p>
-    <p class="hint">${escapeHtml(hint)}</p>
-    <button type="button" class="btn" onclick="closeTab()">${escapeHtml(copy.closeBtn)}</button>
+    <p id="oauth-hint" class="hint">${escapeHtml(hint)}</p>
+    <button id="btn-close-tab" type="button" class="btn" onclick="closeTab()">${escapeHtml(copy.closeBtn)}</button>
   </div>
 </body>
 </html>`;

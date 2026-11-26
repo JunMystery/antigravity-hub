@@ -122,18 +122,25 @@ class TestPinningAndModelRouting(unittest.TestCase):
 class TestLauncherUiAndDiscovery(unittest.TestCase):
     def test_compact_status_bar_inline_selector(self):
         from PyQt6.QtWidgets import QApplication
-        from launcher_widget import CompactStatusBar
+        from launcher_view_dashboard import DashboardView
 
         _app = QApplication.instance() or QApplication(["-platform", "offscreen"])
-        bar = CompactStatusBar()
-        selected = []
-        bar.account_selected.connect(selected.append)
 
+        class _FakeWin:
+            data = {"settings": {}, "profiles": []}
+            def on_launch_app_clicked(self): pass
+            def on_launch_ide_clicked(self): pass
+            def on_manual_next_account(self): pass
+            def on_toggle_proxy_btn(self): pass
+            def on_pin_account_selected(self, key): selected.append(key)
+
+        selected = []
+        dash = DashboardView(_FakeWin())
         opts = [("AUTO", "Auto (Round Robin)"), ("a1@x.com", "a1@x.com"), ("a2@x.com", "a2@x.com [Deactive]")]
-        bar.set_account_options(opts, "AUTO")
+        dash.set_account_options(opts, "AUTO")
         self.assertEqual(selected, [])
 
-        bar.combo_account.setCurrentIndex(2)
+        dash.combo_account.setCurrentIndex(2)
         self.assertEqual(selected, ["a2@x.com"])
 
     def test_discover_models_from_logs_and_payload(self):
@@ -245,7 +252,8 @@ class TestLauncherUiAndDiscovery(unittest.TestCase):
                  patch("launcher_view_dashboard.collect_available_accounts", return_value=fake_accs):
                 dash.update_dashboard()
 
-            self.assertEqual(dash.status_bar.combo_account.currentData(), "u2@test.com")
+            self.assertEqual(dash.combo_account.currentData(), "u2@test.com")
+            self.assertEqual(dash.status_bar.lbl_acc.text(), "u2@test.com")
             self.assertEqual(dash.card_turn.lbl_value.text(), "∞")
             self.assertFalse(dash.btn_next.isEnabled())
             self.assertFalse(hasattr(dash, "btn_model_rules"))

@@ -7,6 +7,7 @@
   "btn.launch_app": "Khởi chạy App (2.0)",
   "btn.launch_ide": "Khởi chạy IDE",
   "btn.cancel": "Hủy",
+  "btn.close": "Đóng",
   "btn.save": "Lưu",
   "btn.pause_rotation": "Tạm dừng",
   "btn.resume_rotation": "Tiếp tục",
@@ -181,6 +182,7 @@
   "dashboard.pinned_sub": "Cố định tài khoản (Pause Proxy)",
   "dashboard.pinned_deactive_sub": "Cố định tài khoản đang tắt",
   "dashboard.rr_sub": "Đang chạy: {acc}",
+  "dashboard.rr_mode": "Round Robin",
   "dashboard.model_rule_sub": "Theo quy tắc Model: {rule}",
   "dashboard.turn_continuous": "Liên tục",
   "dashboard.turn_rr": "Xoay vòng",
@@ -226,11 +228,26 @@
   "model_rules.strategy_round_robin": "Xoay vòng trong nhóm",
   "model_rules.strategy_rr_custom": "Xoay vòng ({reqs} req)",
   "model_rules.strategy_rr_global": "Xoay vòng (Theo tổng)",
+  "model_rules.strategy_priority_short": "Ưu tiên",
+  "model_rules.strategy_rr_custom_short": "RR ({reqs} req)",
+  "model_rules.strategy_rr_global_short": "RR (Tổng)",
   "model_rules.req_per_account": "Req / tài khoản:",
   "model_rules.inherit_global": "Theo Proxy tổng",
   "model_rules.accounts_hint": "Chọn và sắp xếp thứ tự ưu tiên tài khoản (bao gồm cả Deactive):",
   "model_rules.fallback_global_opt": "Cho phép chuyển sang luồng chung nếu tất cả tài khoản trong quy tắc đều lỗi",
   "model_rules.badge_fallback": "Cho phép Fallback",
+  "model_rules.badge_fallback_short": "Fallback",
+  "model_rules.count_models_one": "{count} model",
+  "model_rules.count_models": "{count} model",
+  "model_rules.count_accounts_one": "{count} tài khoản",
+  "model_rules.count_accounts": "{count} tài khoản",
+  "model_rules.click_for_details": "Nhấn để xem danh sách chi tiết",
+  "model_rules.dialog_search_placeholder": "Lọc nhanh danh sách...",
+  "model_rules.dialog_avail_models_title": "Model khả dụng - {email}",
+  "model_rules.dialog_rule_models_title": "Mẫu Model - {name}",
+  "model_rules.dialog_rule_accounts_title": "Tài khoản đích - {name}",
+  "model_rules.dialog_rule_models_sub": "{count} | Kiểu khớp: {match_type}",
+  "model_rules.dialog_rule_accounts_sub": "{count} | {strategy}",
   "model_rules.scan_title": "Model khả dụng theo tài khoản",
   "model_rules.status_active": "Hoạt động",
   "model_rules.status_deactive": "Deactive",
@@ -238,13 +255,6 @@
   "model_rules.err_empty_pattern": "Vui lòng chọn ít nhất một model.",
   "model_rules.err_invalid_regex": "Biểu thức khớp không hợp lệ: {pattern}",
   "model_rules.err_no_account": "Vui lòng chọn ít nhất một tài khoản đích.",
-
-
-
-
-
-
   "model_rules.scanning": "Đang quét...",
-
   "model_rules.scan_empty": "Chưa quét hoặc API không trả về thêm model"
 }

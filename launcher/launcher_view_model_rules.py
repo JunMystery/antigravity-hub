@@ -7,34 +7,28 @@ và quét song song model khả dụng trên toàn bộ tài khoản.
 
 import threading
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
+    QTableWidget, QTableWidgetItem, QHeaderView, QMenu
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
 from launcher_i18n import tr
 from launcher_storage import save_data
 from launcher_monitor import send_proxy_cmd
+from launcher_toggle_switch import ToggleSwitch
 from launcher_model_discovery import (
     collect_available_accounts, discover_models_from_logs,
     fetch_all_accounts_models, simulate_model_route
 )
 from launcher_model_rule_editor import ModelRuleEditorDialog
 from launcher_model_rule_formatter import (
-    format_rule_pattern_cell, format_rule_strategy_cell, format_rule_accounts_cell
+    format_count_label, format_rule_pattern_cell,
+    format_rule_strategy_cell, format_rule_accounts_cell
 )
-
-
-def _wrap_cell_widgets(widgets, center=False):
-    box = QWidget()
-    hl = QHBoxLayout(box)
-    hl.setContentsMargins(4, 2, 4, 2)
-    hl.setSpacing(4)
-    if center:
-        hl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-    for w in widgets:
-        hl.addWidget(w)
-    return box
+from launcher_item_list_dialog import (
+    make_action_button, make_detail_button, wrap_cell_widgets,
+    open_available_models_dialog, open_rule_patterns_dialog, open_rule_accounts_dialog
+)
 
 
 def _build_table(col_modes, col_widths=None):
@@ -50,17 +44,6 @@ def _build_table(col_modes, col_widths=None):
     for col, width in (col_widths or {}).items():
         tbl.setColumnWidth(col, width)
     return tbl
-
-
-def _make_btn(text, slot, width=None, compact=False):
-    btn = QPushButton(text)
-    if width:
-        btn.setFixedSize(width[0], width[1])
-        btn.setStyleSheet("padding: 0px;")
-    elif compact:
-        btn.setStyleSheet("padding: 2px 8px;")
-    btn.clicked.connect(slot)
-    return btn
 
 
 class ModelRulesView(QWidget):
@@ -85,8 +68,8 @@ class ModelRulesView(QWidget):
         header = QHBoxLayout()
         self.lbl_title = QLabel()
         self.lbl_title.setStyleSheet("font-size: 16px; font-weight: 600;")
-        self.btn_scan_all = _make_btn("", self.start_scan_all_accounts)
-        self.btn_add_rule = _make_btn("", lambda: self.open_rule_editor())
+        self.btn_scan_all = make_action_button("", self.start_scan_all_accounts)
+        self.btn_add_rule = make_action_button("", lambda: self.open_rule_editor())
         self.btn_add_rule.setObjectName("btn_primary")
         header.addWidget(self.lbl_title)
         header.addStretch(1)
@@ -99,7 +82,7 @@ class ModelRulesView(QWidget):
         self.combo_test_model = QComboBox()
         self.combo_test_model.setEditable(True)
         self.combo_test_model.lineEdit().returnPressed.connect(self.run_quick_test)
-        self.btn_test_route = _make_btn("", self.run_quick_test)
+        self.btn_test_route = make_action_button("", self.run_quick_test)
         tester_row.addWidget(self.lbl_test_title)
         tester_row.addWidget(self.combo_test_model, 1)
         tester_row.addWidget(self.btn_test_route)
@@ -112,9 +95,10 @@ class ModelRulesView(QWidget):
         self.tbl_rules = _build_table((
             QHeaderView.ResizeMode.Fixed, QHeaderView.ResizeMode.Fixed,
             QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.ResizeToContents,
-            QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.Stretch,
-            QHeaderView.ResizeMode.Fixed,
-        ), {0: 74, 1: 56, 6: 140})
+            QHeaderView.ResizeMode.Stretch,
+        ), {0: 58, 1: 46})
+        self.tbl_rules.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tbl_rules.viewport().customContextMenuRequested.connect(self._show_rule_context_menu)
         layout.addWidget(self.tbl_rules, 2)
 
         self.lbl_scan_title = QLabel()
@@ -122,8 +106,8 @@ class ModelRulesView(QWidget):
         layout.addWidget(self.lbl_scan_title)
 
         self.tbl_scan = _build_table((
-            QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.ResizeToContents,
-            QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.Fixed,
+            QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.ResizeToContents,
+            QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.Fixed,
         ), {3: 120})
         layout.addWidget(self.tbl_scan, 1)
 
@@ -155,7 +139,7 @@ class ModelRulesView(QWidget):
             if m and m.lower() not in seen:
                 seen.add(m.lower())
                 merged.append(m)
-        return merged
+        return sorted(merged, key=str.lower)
 
     def refresh_view(self):
         rules = self._get_rules()
@@ -164,32 +148,26 @@ class ModelRulesView(QWidget):
             row = self.tbl_rules.rowCount()
             self.tbl_rules.insertRow(row)
 
-            btn_up = _make_btn("▲", lambda _, i=idx: self.move_rule(i, -1), (26, 24))
+            btn_up = make_action_button("▲", lambda _, i=idx: self.move_rule(i, -1), (24, 22))
             btn_up.setEnabled(idx > 0)
-            btn_dn = _make_btn("▼", lambda _, i=idx: self.move_rule(i, 1), (26, 24))
+            btn_dn = make_action_button("▼", lambda _, i=idx: self.move_rule(i, 1), (24, 22))
             btn_dn.setEnabled(idx < len(rules) - 1)
-            self.tbl_rules.setCellWidget(row, 0, _wrap_cell_widgets([btn_up, btn_dn]))
+            self.tbl_rules.setCellWidget(row, 0, wrap_cell_widgets([btn_up, btn_dn]))
 
-            chk = QCheckBox()
-            chk.setChecked(rule.get("enabled", True) is not False)
-            chk.toggled.connect(lambda state, i=idx: self.toggle_rule(i, state))
-            self.tbl_rules.setCellWidget(row, 1, _wrap_cell_widgets([chk], center=True))
+            sw = ToggleSwitch(checked=rule.get("enabled", True) is not False)
+            sw.toggled.connect(lambda state, i=idx: self.toggle_rule(i, state))
+            self.tbl_rules.setCellWidget(row, 1, wrap_cell_widgets([sw], center=True))
 
             pat_text, pat_tip = format_rule_pattern_cell(rule)
-            pat_item = QTableWidgetItem(pat_text)
-            pat_item.setToolTip(pat_tip)
-            self.tbl_rules.setItem(row, 2, pat_item)
-            mtype = str(rule.get("match_type") or "contains").lower()
-            self.tbl_rules.setItem(row, 3, QTableWidgetItem(tr(f"model_rules.match_{mtype}")))
-            self.tbl_rules.setItem(row, 4, QTableWidgetItem(format_rule_strategy_cell(rule)))
+            btn_pat = make_detail_button(pat_text, pat_tip, lambda _, r=rule: open_rule_patterns_dialog(self, r))
+            self.tbl_rules.setCellWidget(row, 2, wrap_cell_widgets([btn_pat]))
+            self.tbl_rules.setItem(row, 3, QTableWidgetItem(format_rule_strategy_cell(rule, compact=True)))
             acc_text, acc_tip = format_rule_accounts_cell(rule)
-            acc_item = QTableWidgetItem(acc_text)
-            acc_item.setToolTip(acc_tip)
-            self.tbl_rules.setItem(row, 5, acc_item)
-
-            btn_edit = _make_btn(tr("model_rules.btn_edit"), lambda _, i=idx: self.open_rule_editor(edit_idx=i), compact=True)
-            btn_del = _make_btn(tr("btn.delete").replace("_", ""), lambda _, i=idx: self.delete_rule(i), compact=True)
-            self.tbl_rules.setCellWidget(row, 6, _wrap_cell_widgets([btn_edit, btn_del]))
+            btn_acc = make_detail_button(
+                acc_text, acc_tip,
+                lambda _, r=rule: open_rule_accounts_dialog(self, r, collect_available_accounts(self.win.data))
+            )
+            self.tbl_rules.setCellWidget(row, 4, wrap_cell_widgets([btn_acc]))
 
         cur_txt = self.combo_test_model.currentText()
         self.combo_test_model.blockSignals(True)
@@ -217,6 +195,19 @@ class ModelRulesView(QWidget):
         if 0 <= idx < len(rules):
             rules[idx]["enabled"] = bool(checked)
             self._persist_and_reload()
+
+    def _build_rule_context_menu(self, idx: int) -> QMenu:
+        menu = QMenu(self)
+        act_edit = menu.addAction(tr("model_rules.btn_edit"))
+        act_edit.triggered.connect(lambda: self.open_rule_editor(edit_idx=idx))
+        act_del = menu.addAction(tr("btn.delete").replace("_", ""))
+        act_del.triggered.connect(lambda: self.delete_rule(idx))
+        return menu
+
+    def _show_rule_context_menu(self, pos):
+        row = self.tbl_rules.rowAt(pos.y())
+        if 0 <= row < len(self._get_rules()):
+            self._build_rule_context_menu(row).exec(self.tbl_rules.viewport().mapToGlobal(pos))
 
     def delete_rule(self, idx: int):
         rules = self._get_rules()
@@ -264,19 +255,31 @@ class ModelRulesView(QWidget):
                 self._scan_cache[str(entry["email"]).lower()] = entry
         self.btn_scan_all.setEnabled(True)
         self.btn_scan_all.setText(tr("model_rules.btn_scan_all"))
+        self._render_scan_table()
+        self.refresh_view()
+
+    def _render_scan_table(self):
         self.tbl_scan.setRowCount(0)
         for entry in self._scanned_accounts:
             row = self.tbl_scan.rowCount()
             self.tbl_scan.insertRow(row)
             self.tbl_scan.setItem(row, 0, QTableWidgetItem(entry.get("email", "")))
             self.tbl_scan.setItem(row, 1, QTableWidgetItem(tr("model_rules.status_active") if entry.get("enabled", True) else tr("model_rules.status_deactive")))
-            models = entry.get("models") or []
-            self.tbl_scan.setItem(row, 2, QTableWidgetItem(", ".join(models) if models else (entry.get("error") or tr("model_rules.scan_empty"))))
+            models = sorted(entry.get("models") or [], key=str.lower)
+            entry["models"] = models
+            if models:
+                cnt_txt = format_count_label(len(models), "model_rules.count_models_one", "model_rules.count_models")
+                btn_models = make_detail_button(
+                    cnt_txt, tr("model_rules.click_for_details"),
+                    lambda _, em=entry.get("email", ""), ms=list(models): open_available_models_dialog(self, em, ms)
+                )
+                self.tbl_scan.setCellWidget(row, 2, wrap_cell_widgets([btn_models]))
+            else:
+                self.tbl_scan.setItem(row, 2, QTableWidgetItem(entry.get("error") or tr("model_rules.scan_empty")))
             acc_ref = {"id": entry.get("id", ""), "email": entry.get("email", "")}
-            btn_make = _make_btn(tr("model_rules.btn_create_from_scan"), lambda _, ms=list(models), acc=acc_ref: self.open_rule_editor(preset_models=ms, preset_account=acc), compact=True)
+            btn_make = make_action_button(tr("model_rules.btn_create_from_scan"), lambda _, ms=list(models), acc=acc_ref: self.open_rule_editor(preset_models=ms, preset_account=acc), compact=True)
             btn_make.setEnabled(bool(models or acc_ref["email"]))
             self.tbl_scan.setCellWidget(row, 3, btn_make)
-        self.refresh_view()
 
     def retranslate_ui(self):
         self.lbl_title.setText(tr("model_rules.page_title"))
@@ -286,6 +289,8 @@ class ModelRulesView(QWidget):
         self.combo_test_model.lineEdit().setPlaceholderText(tr("model_rules.test_placeholder"))
         self.btn_test_route.setText(tr("model_rules.btn_test"))
         self.lbl_scan_title.setText(tr("model_rules.scan_title"))
-        self.tbl_rules.setHorizontalHeaderLabels([tr("model_rules.col_priority"), tr("model_rules.enabled"), tr("model_rules.col_pattern"), tr("model_rules.col_match_type"), tr("model_rules.col_strategy"), tr("model_rules.col_account"), tr("model_rules.col_actions")])
+        self.tbl_rules.setHorizontalHeaderLabels([tr("model_rules.col_priority"), tr("model_rules.enabled"), tr("model_rules.col_pattern"), tr("model_rules.col_strategy"), tr("model_rules.col_account")])
         self.tbl_scan.setHorizontalHeaderLabels([tr("model_rules.col_account"), tr("monitor.col_status"), tr("model_rules.col_models"), tr("model_rules.col_actions")])
+        if self._scanned_accounts:
+            self._render_scan_table()
         self.refresh_view()

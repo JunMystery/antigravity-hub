@@ -25,6 +25,38 @@ def get_log_path() -> str:
     """Trả về đường dẫn tuyệt đối đến tệp proxy.log."""
     return LOG_FILE
 
+
+def read_tail_lines(
+    file_path: str,
+    max_lines: int = 2000,
+    max_bytes: int = 1024 * 1024,
+    chunk_size: int = 16384
+) -> List[str]:
+    """Đọc tối đa max_lines dòng cuối của tệp từ cuối lên, giới hạn dung lượng max_bytes."""
+    if not file_path or max_lines <= 0 or not os.path.exists(file_path):
+        return []
+    try:
+        with open(file_path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            pos = f.tell()
+            if pos <= 0:
+                return []
+            chunks = []
+            bytes_read = 0
+            newline_count = 0
+            while pos > 0 and bytes_read < max_bytes and newline_count <= max_lines:
+                step = min(chunk_size, pos, max_bytes - bytes_read)
+                pos -= step
+                f.seek(pos, os.SEEK_SET)
+                buf = f.read(step)
+                chunks.append(buf)
+                bytes_read += len(buf)
+                newline_count += buf.count(b"\n")
+        raw = b"".join(reversed(chunks)).decode("utf-8", errors="ignore")
+        return raw.splitlines()[-max_lines:]
+    except Exception:
+        return []
+
 def clear_log() -> bool:
     """Xóa trắng nội dung tệp proxy.log an toàn."""
     try:

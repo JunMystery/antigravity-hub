@@ -11,7 +11,7 @@ import urllib.parse
 from typing import List, Dict, Any
 
 from launcher_storage import load_accounts, CLIENT_ID, CLIENT_SECRET, USER_AGENT
-from launcher_log_manager import get_log_path
+from launcher_log_manager import get_log_path, read_tail_lines
 from launcher_quota_fetcher import get_ssl_context
 
 
@@ -74,8 +74,7 @@ def discover_models_from_logs(max_lines: int = 2000) -> List[str]:
     models = []
     seen = set()
     try:
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-            lines = f.readlines()[-max_lines:]
+        lines = read_tail_lines(log_path, max_lines=max_lines)
         for line in reversed(lines):
             m = re.search(r"\[MODEL:\s*([^\]]+)\]", line)
             if m:
@@ -86,7 +85,7 @@ def discover_models_from_logs(max_lines: int = 2000) -> List[str]:
                     models.append(name)
     except Exception:
         pass
-    return models
+    return sorted(models, key=str.lower)
 
 
 def _refresh_access_token(acc: dict, ssl_ctx) -> str:
@@ -140,7 +139,7 @@ def _extract_model_ids_from_payload(payload: Any) -> List[str]:
         if norm and norm.lower() not in seen:
             seen.add(norm.lower())
             clean.append(norm)
-    return clean
+    return sorted(clean, key=str.lower)
 
 
 def fetch_account_models(acc: dict) -> Dict[str, Any]:
@@ -176,7 +175,7 @@ def fetch_account_models(acc: dict) -> Dict[str, Any]:
         except Exception as exc:
             errors.append(f"{endpoint}: {exc}")
 
-    return {"ok": len(collected) > 0, "models": collected, "error": "; ".join(errors)}
+    return {"ok": len(collected) > 0, "models": sorted(collected, key=str.lower), "error": "; ".join(errors)}
 
 
 def fetch_all_accounts_models(accounts_list: List[Dict[str, Any]], max_workers: int = 6) -> List[Dict[str, Any]]:

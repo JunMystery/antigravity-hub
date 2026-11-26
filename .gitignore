@@ -63,3 +63,5 @@ venv/
 *.swo
 *~
 .agent-context/
+.playwright/
+.playwright-mcp/

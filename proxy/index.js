@@ -83,7 +83,7 @@ console.log("[MITM-INIT] [OK] Chung chi SSL da san sang.");
 
 const rotator = new AccountRotator(CONFIG);
 rotator.loadState();
-setInterval(() => rotator.loadState(), 5000);
+setInterval(() => rotator.loadState(false), 5000);
 const curInitAcc = rotator.getCurrentAccount();
 console.log(`[ROUND-ROBIN] Da nap ${rotator.accounts.length} tai khoan active (Khoi tao tai: [${curInitAcc?.email || "Chua co"}], nguong: ${rotator.requestsPerAccount} req/tai khoan).`);
 

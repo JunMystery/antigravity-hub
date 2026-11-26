@@ -132,12 +132,14 @@ class TestActivityLogs(unittest.TestCase):
         self.assertEqual(format_compact_details(raw4), "Lưu Token → darkzeuslk@gmail.com [OK]")
 
     def test_compact_status_bar(self):
-        """Xác nhận CompactStatusBar hiển thị liền khối và format trạng thái chuẩn."""
+        """Xác nhận CompactStatusBar hiển thị liền khối, làm nổi bật tài khoản và format trạng thái chuẩn."""
         bar = CompactStatusBar()
-        self.assertEqual(bar.height(), 68)
-        bar.set_state("● STANDBY", "#89b4fa", "20130", "test@gmail.com", "4/10", "Lượt")
+        self.assertEqual(bar.height(), 60)
+        self.assertFalse(bar.lbl_acc.isHidden())
+        bar.set_state("● STANDBY", "#89b4fa", "20130", "test@gmail.com", "4/10", "Lượt", acc_color="#f9e2af")
         self.assertEqual(bar.lbl_status.text(), "● STANDBY")
         self.assertEqual(bar.lbl_acc.text(), "test@gmail.com")
+        self.assertIn("#f9e2af", bar.lbl_acc.styleSheet())
         self.assertEqual(bar.lbl_turn.text(), "4/10")
 
     def test_badge_label_color_map(self):

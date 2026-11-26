@@ -1,6 +1,6 @@
 {
   "name": "antigravity-token-proxy",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Zero-Overhead Transparent MITM Token Rotator Proxy for Google Cloud Code / Antigravity IDE",
   "main": "index.js",
   "scripts": {

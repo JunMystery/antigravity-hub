@@ -13,6 +13,8 @@ PROXY_DIR = os.path.join(BASE_DIR, "proxy")
 ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 ASSET_ICO = os.path.join(ASSETS_DIR, "Antigravity.ico")
 ASSET_PNG = os.path.join(ASSETS_DIR, "Antigravity.png")
+ASSET_IDE_PNG = os.path.join(ASSETS_DIR, "Antigravity-IDE.png")
+ASSET_LOCKUP_PNG = os.path.join(ASSETS_DIR, "Google-Antigravity-Lockup-Full-Color.png")
 
 def get_config_dir() -> str:
     if sys.platform == "win32" and os.environ.get("APPDATA"):

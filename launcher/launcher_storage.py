@@ -28,6 +28,24 @@ def slugify(text: str) -> str:
     text = re.sub(r'[^\w\-]', '', text)
     return text or "account"
 
+def _should_skip_bak_overwrite(cur_parsed: dict, bak_path: str) -> bool:
+    """Không ghi đè .bak đã có dữ liệu tài khoản/profile bằng bản rỗng."""
+    if not isinstance(cur_parsed, dict) or not os.path.exists(bak_path):
+        return False
+    try:
+        with open(bak_path, "r", encoding="utf-8") as bf:
+            bak_parsed = json.load(bf)
+        if not isinstance(bak_parsed, dict):
+            return False
+        if len(bak_parsed.get("profiles") or []) > 0 and len(cur_parsed.get("profiles") or []) == 0:
+            return True
+        if len(bak_parsed.get("accounts") or []) > 0 and len(cur_parsed.get("accounts") or []) == 0:
+            return True
+    except Exception:
+        return False
+    return False
+
+
 def _secure_write(path: str, content: dict) -> None:
     """Ghi JSON an toàn qua tệp tạm (atomic os.replace) và giữ bản dự phòng .bak."""
     parent_dir = os.path.dirname(os.path.abspath(path)) or CONFIG_DIR
@@ -37,8 +55,9 @@ def _secure_write(path: str, content: dict) -> None:
         try:
             if os.path.getsize(path) > 2:
                 with open(path, "r", encoding="utf-8") as rf:
-                    json.load(rf)
-                shutil.copy2(path, f"{path}.bak")
+                    cur_parsed = json.load(rf)
+                if not _should_skip_bak_overwrite(cur_parsed, f"{path}.bak"):
+                    shutil.copy2(path, f"{path}.bak")
         except Exception:
             pass
 
@@ -91,14 +110,49 @@ def _default_profiles_data() -> dict:
         "profiles": []
     }
 
+def _resolve_profile_data_dir(email: str) -> str:
+    underscore_dir = os.path.join(PROFILES_BASE_DIR, re.sub(r"[^a-zA-Z0-9_-]", "_", email))
+    if os.path.exists(underscore_dir):
+        return underscore_dir
+    return os.path.join(PROFILES_BASE_DIR, slugify(email))
+
+
+def _rebuild_profiles_from_accounts(accounts: list) -> list:
+    """Khôi phục danh sách profile từ accounts.json khi profiles.json bị mất danh sách."""
+    rebuilt = []
+    seen = set()
+    for acc in accounts:
+        if not isinstance(acc, dict):
+            continue
+        email = str(acc.get("email") or acc.get("name") or "").strip()
+        acc_id = str(acc.get("id") or "").strip()
+        key = (acc_id.lower(), email.lower())
+        if not (email or acc_id) or key in seen:
+            continue
+        seen.add(key)
+        rebuilt.append({
+            "id": acc_id or f"acc_{len(rebuilt) + 1}",
+            "name": acc.get("name") or email or f"Account {len(rebuilt) + 1}",
+            "email": email,
+            "data_dir": _resolve_profile_data_dir(email or acc_id),
+            "enabled": acc.get("enabled", True) is not False,
+            "order": len(rebuilt) + 1
+        })
+    return rebuilt
+
+
 def load_data() -> dict:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(PROFILES_BASE_DIR, exist_ok=True)
     data = _read_json_with_backup(PROFILES_FILE)
     if data is None:
         default_data = _default_profiles_data()
-        if not os.path.exists(PROFILES_FILE):
-            save_data(default_data)
+        accs = load_accounts()
+        if accs:
+            default_data["profiles"] = _rebuild_profiles_from_accounts(accs)
+            _secure_write(PROFILES_FILE, default_data)
+        elif not os.path.exists(PROFILES_FILE):
+            _secure_write(PROFILES_FILE, default_data)
         return default_data
 
     data.setdefault("settings", {})
@@ -109,6 +163,12 @@ def load_data() -> dict:
     data["settings"].setdefault("ide_binary", find_ide_binary())
     data["settings"].setdefault("log_retention_days", 30)
     profiles = data.get("profiles", [])
+    if not profiles:
+        accs = load_accounts()
+        if accs:
+            profiles = _rebuild_profiles_from_accounts(accs)
+            data["profiles"] = profiles
+            _secure_write(PROFILES_FILE, data)
     for idx, p in enumerate(profiles):
         if "order" not in p or not isinstance(p["order"], int):
             p["order"] = idx + 1
@@ -118,8 +178,30 @@ def load_data() -> dict:
     data["profiles"] = profiles
     return data
 
-def save_data(data: dict) -> None:
-    _secure_write(PROFILES_FILE, data)
+
+def save_data(data: dict, allow_empty_profiles: bool = False) -> None:
+    if not isinstance(data, dict):
+        return
+    payload = dict(data)
+    settings = dict(payload.get("settings") or {})
+    payload["settings"] = settings
+    if not allow_empty_profiles and not payload.get("profiles"):
+        existing = _read_json_with_backup(PROFILES_FILE)
+        if isinstance(existing, dict):
+            if existing.get("profiles"):
+                payload["profiles"] = existing["profiles"]
+            existing_rules = (existing.get("settings") or {}).get("model_rules")
+            if "model_rules" not in settings and existing_rules:
+                settings["model_rules"] = existing_rules
+    _secure_write(PROFILES_FILE, payload)
+
+
+def update_settings_fields(updates: dict) -> dict:
+    """Cập nhật có chọn lọc các khóa trong settings dựa trên dữ liệu mới nhất trên đĩa."""
+    data = load_data()
+    data.setdefault("settings", {}).update(updates or {})
+    save_data(data)
+    return data
 
 def load_accounts() -> list:
     parsed = _read_json_with_backup(ACCOUNTS_FILE)
@@ -144,7 +226,7 @@ def delete_account_completely(profile: dict) -> dict:
     ]
     for idx, p in enumerate(data.get("profiles", [])):
         p["order"] = idx + 1
-    save_data(data)
+    save_data(data, allow_empty_profiles=True)
 
     all_accs = load_accounts()
     filtered_accs = [

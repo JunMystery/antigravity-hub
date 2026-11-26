@@ -261,8 +261,8 @@ class TestModelRuleRoundRobin(unittest.TestCase):
             view = ModelRulesView(_FakeWin())
             view.add_or_update_rule(saved)
             view.add_or_update_rule(dict(saved, id="r_global", requests_per_account=0))
-            self.assertIn("4 req", view.tbl_rules.item(0, 4).text())
-            self.assertIn("Theo tổng", view.tbl_rules.item(1, 4).text())
+            self.assertIn("4 req", view.tbl_rules.item(0, 3).text())
+            self.assertIn("Tổng", view.tbl_rules.item(1, 3).text())
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             status_file = os.path.join(tmp_dir, "live_status.json")

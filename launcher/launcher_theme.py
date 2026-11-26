@@ -43,35 +43,39 @@ QPushButton:disabled {
     border-color: #313244;
 }
 QPushButton#btn_launch_app {
-    background-color: #89b4fa;
-    color: #11111b;
-    font-weight: bold;
-    font-size: 13px;
-    padding: 6px 14px;
+    background-color: #24273a;
+    color: #cdd6f4;
+    border: 1px solid #363a4f;
     border-radius: 6px;
-    border: none;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
 }
 QPushButton#btn_launch_app:hover {
-    background-color: #b4befe;
+    background-color: #313244;
+    border-color: #89b4fa;
 }
 QPushButton#btn_launch_app:disabled {
-    background-color: #313244;
+    background-color: #181825;
+    border-color: #313244;
     color: #6c7086;
 }
 QPushButton#btn_launch_ide {
-    background-color: #cba6f7;
-    color: #11111b;
-    font-weight: bold;
-    font-size: 13px;
-    padding: 6px 14px;
+    background-color: #24273a;
+    color: #cdd6f4;
+    border: 1px solid #363a4f;
     border-radius: 6px;
-    border: none;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 600;
 }
 QPushButton#btn_launch_ide:hover {
-    background-color: #f5c2e7;
+    background-color: #313244;
+    border-color: #cba6f7;
 }
 QPushButton#btn_launch_ide:disabled {
-    background-color: #313244;
+    background-color: #181825;
+    border-color: #313244;
     color: #6c7086;
 }
 QPushButton#btn_proxy_next, QPushButton#btn_proxy_toggle {
@@ -79,7 +83,7 @@ QPushButton#btn_proxy_next, QPushButton#btn_proxy_toggle {
     color: #cdd6f4;
     border: 1px solid #45475a;
     border-radius: 6px;
-    padding: 6px 12px;
+    padding: 4px 12px;
     font-weight: 500;
 }
 QPushButton#btn_proxy_next:hover, QPushButton#btn_proxy_toggle:hover {

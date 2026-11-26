@@ -157,9 +157,9 @@ class TestAdvancedModelRules(unittest.TestCase):
             view.add_or_update_rule({"id": "r2", "name": "R2", "pattern": "claude-opus", "match_type": "exact", "strategy": "priority", "accounts": [{"email": "u1@test.com"}], "enabled": True})
             view.move_rule(1, -1)
             self.assertEqual(win.data["settings"]["model_rules"][0]["id"], "r2")
-            act_box = view.tbl_rules.cellWidget(0, 6)
-            btn_texts = [b.text() for b in act_box.findChildren(type(view.btn_add_rule))]
-            self.assertTrue(all(not t.startswith("_") for t in btn_texts))
+            self.assertEqual(view.tbl_rules.columnCount(), 5)
+            menu_texts = [a.text() for a in view._build_rule_context_menu(0).actions()]
+            self.assertTrue(menu_texts and all(not t.startswith("_") for t in menu_texts))
             res = simulate_model_route("claude-opus", win.data["settings"]["model_rules"], fake_accs)
             self.assertTrue(res["matched"])
             self.assertEqual(res["accounts"][0]["email"], "u1@test.com")
@@ -283,9 +283,10 @@ class TestAdvancedModelRules(unittest.TestCase):
             self.assertEqual(view.tbl_rules.verticalHeader().defaultSectionSize(), 44)
             self.assertEqual(view.tbl_rules.editTriggers(), QTableWidget.EditTrigger.NoEditTriggers)
             view.add_or_update_rule(saved)
-            self.assertEqual(view.tbl_rules.item(0, 2).text(), "claude-opus-4, gpt-5")
+            from PyQt6.QtWidgets import QPushButton
+            self.assertEqual(view.tbl_rules.cellWidget(0, 2).findChild(QPushButton).text(), "2 model")
             view.add_or_update_rule(dict(saved, name="VIP Pool"), edit_idx=0)
-            self.assertEqual(view.tbl_rules.item(0, 2).text(), "VIP Pool (claude-opus-4, gpt-5)")
+            self.assertEqual(view.tbl_rules.cellWidget(0, 2).findChild(QPushButton).text(), "VIP Pool (2 model)")
 
 
 if __name__ == "__main__":

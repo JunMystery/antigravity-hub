@@ -10,7 +10,7 @@ import signal
 from PyQt6.QtWidgets import (
     QMainWindow, QApplication, QMessageBox, QWidget, QHBoxLayout, QStackedWidget
 )
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QIcon
 
 from launcher_storage import (
@@ -42,6 +42,7 @@ from launcher_view_logs import LogsView
 from launcher_view_settings import SettingsView
 from launcher_tray import TrayManager, handle_hide_on_launch, handle_close_event, clean_exit
 from launcher_prompt_dialog import show_about_prompt
+from launcher_window_state import restore_window_state, restore_window_from_tray
 
 class LauncherWindow(QMainWindow):
     """Cửa sổ điều phối chính Antigravity Launcher với Sidebar Navigation."""
@@ -54,8 +55,8 @@ class LauncherWindow(QMainWindow):
 
         set_language(self.data.get("settings", {}).get("language", "vi"))
         self.setWindowTitle(tr("app.title"))
-        self.resize(840, 620)
         self.setMinimumSize(760, 480)
+        restore_window_state(self)
         if APP_ICON and os.path.exists(APP_ICON):
             self.setWindowIcon(QIcon(APP_ICON))
 
@@ -90,8 +91,8 @@ class LauncherWindow(QMainWindow):
         self.sidebar.view_changed.connect(self.switch_view)
         root_layout.addWidget(self.stack, 1)
 
-        self.btn_launch_app = self.view_dashboard.btn_launch_app
-        self.btn_launch_ide = self.view_dashboard.btn_launch_ide
+        self.btn_launch_app = self.sidebar.btn_launch_app
+        self.btn_launch_ide = self.sidebar.btn_launch_ide
         self.btn_launch = self.btn_launch_app
         self.btn_next = self.view_dashboard.btn_next
         self.btn_toggle_proxy = self.view_dashboard.btn_toggle_proxy
@@ -102,8 +103,8 @@ class LauncherWindow(QMainWindow):
         self.update_live_monitor()
 
         self.monitor_timer = QTimer(self)
-        self.monitor_timer.timeout.connect(self.update_live_monitor)
-        self.monitor_timer.start(500)
+        self.monitor_timer.timeout.connect(self._on_monitor_tick)
+        self.monitor_timer.start(1000)
         self.auto_quota_timer = QTimer(self)
         self.auto_quota_timer.timeout.connect(self.on_auto_quota_tick)
         self.auto_quota_timer.start(5 * 60 * 1000)
@@ -120,7 +121,9 @@ class LauncherWindow(QMainWindow):
     def switch_view(self, view_id: str):
         target = self.view_map.get(view_id)
         if target:
-            if view_id == "logs" and hasattr(target, "load_logs"):
+            if view_id == "dashboard":
+                self.update_live_monitor()
+            elif view_id == "logs" and hasattr(target, "load_logs"):
                 target.load_logs()
             elif view_id == "model_rules" and hasattr(target, "refresh_view"):
                 target.refresh_view()
@@ -194,6 +197,12 @@ class LauncherWindow(QMainWindow):
             send_proxy_cmd(self, "pin_account", {"email": account_key, "id": account_key})
         self.update_live_monitor()
 
+    def _on_monitor_tick(self):
+        if self.isHidden() or self.isMinimized():
+            return
+        if self.stack.currentWidget() is self.view_dashboard:
+            self.update_live_monitor()
+
     def update_live_monitor(self):
         if hasattr(self, "view_dashboard"): self.view_dashboard.update_dashboard()
 
@@ -212,14 +221,9 @@ class LauncherWindow(QMainWindow):
             self.lbl_info.setText(tr("dialog.deleted_msg").format(label=label))
 
     def activate_window(self):
-        self.setWindowState(self.windowState() & ~Qt.WindowState.WindowMinimized | Qt.WindowState.WindowActive)
-        self.show()
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
-        handle = self.windowHandle()
-        if handle and hasattr(handle, "requestActivate"):
-            handle.requestActivate()
+        restore_window_from_tray(self)
+        if self.stack.currentWidget() is self.view_dashboard:
+            self.update_live_monitor()
 
     def on_settings_clicked(self): self.switch_view("settings")
     def on_launch_app_clicked(self): self._launch_target("app", getattr(self, "btn_launch_app", None), tr("btn.launch_app"))
@@ -230,13 +234,20 @@ class LauncherWindow(QMainWindow):
         sel = self._get_selected()
         profiles = self.data.get("profiles", [])
         data_dir = sel.get("data_dir") if sel and sel.get("data_dir") else (profiles[0].get("data_dir") if profiles and profiles[0].get("data_dir") else os.path.join(PROFILES_BASE_DIR, "default"))
+        preserve_label = bool(button.property("icon_only") or button.property("keep_short_label")) if button else False
         if button:
             button.setEnabled(False)
-            button.setText(tr("msg.launching"))
+            if preserve_label:
+                button.setToolTip(tr("msg.launching"))
+            else:
+                button.setText(tr("msg.launching"))
         def restore_btn():
             if button:
                 button.setEnabled(True)
-                button.setText(default_text)
+                if preserve_label:
+                    button.setToolTip(default_text)
+                else:
+                    button.setText(default_text)
         if launch_profile(data_dir, target=target, use_proxy=True):
             QTimer.singleShot(1500, restore_btn)
             QTimer.singleShot(50, lambda: handle_hide_on_launch(self))
@@ -263,7 +274,10 @@ def run_gui():
     win = LauncherWindow()
     if server:
         setup_single_instance_listener(server, win.activate_window)
-    win.show()
+    if getattr(win, "_was_maximized", False):
+        win.showMaximized()
+    else:
+        win.show()
     def handle_signal(sig, frame):
         stop_all_launched_apps()
         stop_proxy()

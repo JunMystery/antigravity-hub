@@ -125,5 +125,51 @@ class TestTokenInOutDelegate(unittest.TestCase):
         hint_simple = delegate.sizeHint(opt, idx_simple)
         self.assertGreaterEqual(hint_simple.width(), 160)
 
+    def test_slash_center_anchor_aligned_with_and_without_cache(self):
+        """Xác nhận dấu '/' luôn neo cố định tại tâm ngang giữa các dòng có và không có cached."""
+        from PyQt6.QtCore import QRect
+        from PyQt6.QtGui import QPainter, QPixmap
+        from PyQt6.QtWidgets import QStyleOptionViewItem
+
+        class _SpyPainter(QPainter):
+            def __init__(self, device):
+                super().__init__(device)
+                self.calls = []
+
+            def drawText(self, rect, flags, text):
+                self.calls.append((QRect(rect), text))
+                super().drawText(rect, flags, text)
+
+        samples = [
+            "122,854 / 1,542",
+            "122,854 / 1,542 (+156,602)",
+            "500 / 20 (+10,000)",
+            "1,234,567 / 12,345 (+1,234,567)",
+        ]
+        table = QTableWidget(len(samples), 1)
+        delegate = TokenInOutDelegate(table)
+        for row_idx, val in enumerate(samples):
+            table.setItem(row_idx, 0, QTableWidgetItem(val))
+
+        for width in (240, 280, 180):
+            cell_rect = QRect(0, 0, width, 28)
+            slash_positions = []
+            for row_idx in range(len(samples)):
+                pixmap = QPixmap(width, 28)
+                painter = _SpyPainter(pixmap)
+                opt = QStyleOptionViewItem()
+                opt.rect = QRect(cell_rect)
+                opt.fontMetrics = table.fontMetrics()
+                delegate.paint(painter, opt, table.model().index(row_idx, 0))
+                painter.end()
+
+                slash_rects = [r for r, txt in painter.calls if txt == "/"]
+                self.assertEqual(len(slash_rects), 1)
+                slash_positions.append((slash_rects[0].x(), slash_rects[0].center().x()))
+                for painted_rect, _ in painter.calls:
+                    self.assertLessEqual(painted_rect.right(), cell_rect.right())
+
+            self.assertEqual(len(set(slash_positions)), 1, f"Width {width}: {slash_positions}")
+
 if __name__ == "__main__":
     unittest.main()

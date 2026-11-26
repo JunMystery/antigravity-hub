@@ -6,7 +6,7 @@ and optional '(+Cached)' in Yellow (#f9e2af), with '/' anchored as the horizonta
 """
 
 import re
-from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem
+from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QStyle
 from PyQt6.QtCore import Qt, QModelIndex, QRect, QSize
 from PyQt6.QtGui import QPainter, QColor
 
@@ -87,7 +87,7 @@ class TokenInOutDelegate(QStyledItemDelegate):
         style = widget.style() if widget else None
         if style:
             style.drawPrimitive(style.PrimitiveElement.PE_PanelItemViewItem, option, painter, widget)
-        elif option.state & option.StateFlag.State_Selected:
+        elif option.state & QStyle.StateFlag.State_Selected:
             painter.fillRect(option.rect, option.palette.highlight())
 
         raw_text = index.data(Qt.ItemDataRole.DisplayRole)
@@ -112,55 +112,52 @@ class TokenInOutDelegate(QStyledItemDelegate):
             painter.restore()
             return
 
-        # Tính toán chiều rộng văn bản thực tế để định vị '/' động, không che lấp Out/Cached
+        # Neo cố định dấu '/' tại tâm ngang của ô để đồng bộ giữa dòng có và không có cached
         slash_str = "/"
         slash_w = max(fm.horizontalAdvance(slash_str), 8)
         spacing = 5
+        pad_x = 4
 
-        in_w = fm.horizontalAdvance(in_text)
-        out_w = fm.horizontalAdvance(out_text)
-        cached_w = fm.horizontalAdvance(cached_text) if cached_text else 0
-        right_w = out_w + (cached_w + 4 if cached_text else 0)
+        center_x = rect.center().x()
+        slash_x = center_x - slash_w // 2
 
-        min_center_x = rect.left() + in_w + spacing + 6 + slash_w // 2
-        max_center_x = rect.right() - right_w - spacing - 6 - slash_w // 2
-
-        if min_center_x <= max_center_x:
-            if cached_text:
-                # Khi có cache, đặt mốc dịch nhẹ sang trái nhưng đảm bảo cân đối
-                center_x = min_center_x + (max_center_x - min_center_x) // 3
-            else:
-                ideal_center = rect.center().x()
-                center_x = max(min_center_x, min(ideal_center, max_center_x))
-        else:
-            # Khi không gian hẹp, neo vị trí '/' sao cho không làm tràn phần bên phải (Out / Cached)
-            center_x = max(rect.left() + slash_w // 2 + 4, rect.right() - right_w - spacing - 6 - slash_w // 2)
+        painter.setClipRect(rect)
 
         # 1. Draw '/' separator at center_x
-        slash_x = center_x - slash_w // 2
         slash_rect = QRect(slash_x, rect.y(), slash_w, rect.height())
         painter.setPen(COLOR_SLASH)
         painter.drawText(slash_rect, Qt.AlignmentFlag.AlignCenter, slash_str)
 
         # 2. Draw 'In' right-aligned before slash
-        in_rect = QRect(rect.x(), rect.y(), max(0, slash_x - spacing - rect.x()), rect.height())
-        painter.setPen(COLOR_IN)
-        painter.drawText(in_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, in_text)
+        in_left = rect.x() + pad_x
+        in_avail_w = max(0, slash_x - spacing - in_left)
+        if in_avail_w > 0:
+            in_draw = fm.elidedText(in_text, Qt.TextElideMode.ElideLeft, in_avail_w) if fm.horizontalAdvance(in_text) > in_avail_w else in_text
+            in_rect = QRect(in_left, rect.y(), in_avail_w, rect.height())
+            painter.setPen(COLOR_IN)
+            painter.drawText(in_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, in_draw)
 
         # 3. Draw 'Out' left-aligned after slash
         out_x = slash_x + slash_w + spacing
+        right_limit = rect.right() - pad_x + 1
+        out_avail_w = max(0, right_limit - out_x)
         out_w = fm.horizontalAdvance(out_text)
-        out_rect = QRect(out_x, rect.y(), out_w, rect.height())
-        painter.setPen(COLOR_OUT)
-        painter.drawText(out_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, out_text)
+        if out_avail_w > 0:
+            out_draw = fm.elidedText(out_text, Qt.TextElideMode.ElideRight, out_avail_w) if out_w > out_avail_w else out_text
+            out_rect = QRect(out_x, rect.y(), min(out_w, out_avail_w), rect.height())
+            painter.setPen(COLOR_OUT)
+            painter.drawText(out_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, out_draw)
 
-        # 4. Draw 'Cached' (if any) after out
-        if cached_text:
-            cached_x = out_x + out_w + 4
-            cached_w = fm.horizontalAdvance(cached_text)
-            cached_rect = QRect(cached_x, rect.y(), cached_w, rect.height())
-            painter.setPen(COLOR_CACHED)
-            painter.drawText(cached_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, cached_text)
+            # 4. Draw 'Cached' (if any) after out
+            if cached_text and out_w < out_avail_w:
+                cached_x = out_x + out_w + 4
+                cached_avail_w = max(0, right_limit - cached_x)
+                if cached_avail_w > 0:
+                    cached_w = fm.horizontalAdvance(cached_text)
+                    cached_draw = fm.elidedText(cached_text, Qt.TextElideMode.ElideRight, cached_avail_w) if cached_w > cached_avail_w else cached_text
+                    cached_rect = QRect(cached_x, rect.y(), min(cached_w, cached_avail_w), rect.height())
+                    painter.setPen(COLOR_CACHED)
+                    painter.drawText(cached_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, cached_draw)
 
         painter.restore()
 
@@ -171,7 +168,8 @@ class TokenInOutDelegate(QStyledItemDelegate):
         in_w = fm.horizontalAdvance(in_text)
         out_w = fm.horizontalAdvance(out_text)
         cached_w = fm.horizontalAdvance(cached_text) if cached_text else 0
-        w = in_w + out_w + cached_w + 36
+        right_w = out_w + (cached_w + 4 if cached_text else 0)
+        w = 2 * max(in_w, right_w) + 36
         if cached_text:
             return QSize(max(w, 240), 28)
         return QSize(max(w, 160), 28)

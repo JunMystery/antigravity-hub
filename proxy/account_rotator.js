@@ -1,3 +1,4 @@
+const fs = require("node:fs");
 const { checkProactiveTokenRefresh } = require("./token_manager");
 const { agentPool } = require("./agent_pool");
 const { sessionAffinity } = require("./session_affinity");
@@ -35,6 +36,8 @@ class AccountRotator {
     this.pinnedAccountKey = null;
     this.ruleCursors = new Map();
     this._saveTimer = null;
+    this._lastDiskSig = null;
+    this._lastRefreshCheckAt = 0;
   }
 
   getCurrentAccount() {
@@ -213,10 +216,35 @@ class AccountRotator {
     }
   }
 
-  loadState() {
+  _getDiskSig() {
+    const statPart = (filePath) => {
+      if (!filePath) return "none";
+      try {
+        const st = fs.statSync(filePath);
+        return `${st.mtimeMs}:${st.size}`;
+      } catch (_) {
+        return "missing";
+      }
+    };
+    return `${statPart(this.config?.ACCOUNTS_FILE)}|${statPart(this.config?.PROFILES_FILE)}`;
+  }
+
+  loadState(force = true) {
     try {
+      const sig = this._getDiskSig();
+      const now = Date.now();
+      if (!force && this.isRestored && sig === this._lastDiskSig) {
+        if (now - this._lastRefreshCheckAt >= 30000) {
+          this._lastRefreshCheckAt = now;
+          checkProactiveTokenRefresh(this.allAccounts, this.config).catch(() => {});
+        }
+        return;
+      }
+
       const loaded = loadRotatorDiskState(this.config, this.allAccounts);
       if (!loaded) return;
+      this._lastDiskSig = sig;
+      this._lastRefreshCheckAt = now;
 
       this.allAccounts = loaded.allTokenAccounts;
       this.accounts = loaded.activeAccounts;

@@ -8,7 +8,7 @@ và luồng nhật ký hoạt động tinh gọn 1 bảng (ActivityLogsPanel).
 import os
 import json
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QFrame, QLabel, QSizePolicy
+    QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QComboBox, QLabel, QSizePolicy
 )
 from PyQt6.QtCore import Qt
 
@@ -45,19 +45,21 @@ class DashboardView(QWidget):
         super().__init__(parent)
         self.win = win
         self.active_filter = "ALL"
+        self._syncing_combo = False
+        self._cached_options = None
+        self._cached_selected_key = None
 
         self.setObjectName("dashboard_view")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setAutoFillBackground(True)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 14, 16, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(16, 10, 16, 12)
+        layout.setSpacing(8)
 
         # 1. Thanh tóm tắt trạng thái liền khối (Compact Inline Bar)
         self.status_bar = CompactStatusBar(self)
         self.status_bar.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.status_bar.account_selected.connect(self.win.on_pin_account_selected)
         layout.addWidget(self.status_bar)
 
         # Thuộc tính tương thích ngược
@@ -66,49 +68,33 @@ class DashboardView(QWidget):
         self.card_turn = _CardAdapter(tr("monitor.col_turn"))
         self.card_total = _CardAdapter(tr("monitor.col_total"))
 
-        # 2. Thanh tác vụ phân nhóm (Primary Launch vs Secondary Proxy Controls)
-        act_box = QHBoxLayout()
-        act_box.setSpacing(10)
+        # 2. Thanh chọn chế độ Auto / Tài khoản & điều khiển Proxy gọn
+        ctrl_box = QHBoxLayout()
+        ctrl_box.setSpacing(8)
 
-        # Nhóm 1: Tác vụ khởi chạy chính
-        launch_group = QHBoxLayout()
-        launch_group.setSpacing(8)
-        self.btn_launch_app = QPushButton(tr("btn.launch_app"))
-        self.btn_launch_app.setObjectName("btn_launch_app")
-        self.btn_launch_app.setFixedHeight(34)
-        self.btn_launch_app.clicked.connect(self.win.on_launch_app_clicked)
-        launch_group.addWidget(self.btn_launch_app, 1)
+        self.combo_account = QComboBox(self)
+        self.combo_account.setObjectName("combo_dashboard_account")
+        self.combo_account.setFixedHeight(30)
+        self.combo_account.setStyleSheet(
+            "QComboBox#combo_dashboard_account { background-color: #24273a; color: #cdd6f4; "
+            "border: 1px solid #363a4f; border-radius: 6px; padding: 2px 10px; font-size: 12px; font-weight: 500; } "
+            "QComboBox#combo_dashboard_account:hover { border-color: #89b4fa; }"
+        )
+        self.combo_account.currentIndexChanged.connect(self._on_account_combo_changed)
+        ctrl_box.addWidget(self.combo_account, 1)
 
-        self.btn_launch_ide = QPushButton(tr("btn.launch_ide"))
-        self.btn_launch_ide.setObjectName("btn_launch_ide")
-        self.btn_launch_ide.setFixedHeight(34)
-        self.btn_launch_ide.clicked.connect(self.win.on_launch_ide_clicked)
-        launch_group.addWidget(self.btn_launch_ide, 1)
-        act_box.addLayout(launch_group, 3)
-
-        # Đường phân cách đứng
-        divider = QFrame()
-        divider.setFrameShape(QFrame.Shape.VLine)
-        divider.setFrameShadow(QFrame.Shadow.Plain)
-        divider.setStyleSheet("color: #313244; border: none; border-left: 1px solid #313244;")
-        act_box.addWidget(divider)
-
-        # Nhóm 2: Điều khiển Proxy phụ trợ
-        proxy_group = QHBoxLayout()
-        proxy_group.setSpacing(8)
         self.btn_next = QPushButton(tr("monitor.btn_next"))
         self.btn_next.setObjectName("btn_proxy_next")
-        self.btn_next.setFixedHeight(34)
+        self.btn_next.setFixedHeight(30)
         self.btn_next.clicked.connect(self.win.on_manual_next_account)
-        proxy_group.addWidget(self.btn_next)
+        ctrl_box.addWidget(self.btn_next)
 
         self.btn_toggle_proxy = QPushButton(tr("btn.pause_rotation"))
         self.btn_toggle_proxy.setObjectName("btn_proxy_toggle")
-        self.btn_toggle_proxy.setFixedHeight(34)
+        self.btn_toggle_proxy.setFixedHeight(30)
         self.btn_toggle_proxy.clicked.connect(self.win.on_toggle_proxy_btn)
-        proxy_group.addWidget(self.btn_toggle_proxy)
-        act_box.addLayout(proxy_group, 2)
-        layout.addLayout(act_box)
+        ctrl_box.addWidget(self.btn_toggle_proxy)
+        layout.addLayout(ctrl_box)
 
         # 3. Thẻ thống kê Token (Token Metrics Bar)
         self.token_bar = TokenMetricsBar(self)
@@ -132,8 +118,6 @@ class DashboardView(QWidget):
 
     def retranslate_ui(self):
         """Cập nhật giao diện khi thay đổi ngôn ngữ động."""
-        self.btn_launch_app.setText(tr("btn.launch_app"))
-        self.btn_launch_ide.setText(tr("btn.launch_ide"))
         self.btn_next.setText(tr("monitor.btn_next"))
         self.card_status.lbl_title.setText(tr("monitor.col_status"))
         self.card_acc.lbl_title.setText(tr("monitor.col_acc"))
@@ -143,6 +127,34 @@ class DashboardView(QWidget):
             self.token_bar.retranslate_ui()
         if hasattr(self, "activity_panel"):
             self.activity_panel.retranslate_ui()
+
+    def _on_account_combo_changed(self, idx: int):
+        if self._syncing_combo or idx < 0:
+            return
+        key = self.combo_account.itemData(idx)
+        if key is not None:
+            self.win.on_pin_account_selected(str(key))
+
+    def set_account_options(self, options: list, selected_key: str = "AUTO"):
+        """Cập nhật danh sách tài khoản khả dụng trên dropdown mà không làm gián đoạn khi menu đang mở."""
+        if self.combo_account.view().isVisible():
+            return
+        normalized = [(str(k), str(lbl)) for k, lbl in (options or [])]
+        if normalized == self._cached_options and selected_key == self._cached_selected_key:
+            return
+        self._syncing_combo = True
+        try:
+            if normalized != self._cached_options:
+                self.combo_account.clear()
+                for key, label in normalized:
+                    self.combo_account.addItem(label, key)
+                self._cached_options = normalized
+            idx = self.combo_account.findData(selected_key)
+            if idx >= 0:
+                self.combo_account.setCurrentIndex(idx)
+            self._cached_selected_key = selected_key
+        finally:
+            self._syncing_combo = False
 
     def _sync_account_selector(self, pinned_email: str = "", is_paused: bool = False):
         avail = collect_available_accounts(self.win.data)
@@ -160,7 +172,7 @@ class DashboardView(QWidget):
                 if item["email"].lower() == pinned_email.lower():
                     selected_key = item["email"]
                     break
-        self.status_bar.set_account_options(options, selected_key)
+        self.set_account_options(options, selected_key)
         return deactive_map
 
     def update_dashboard(self):
@@ -199,7 +211,7 @@ class DashboardView(QWidget):
             self.status_bar.set_state(
                 "● STOPPED", "#f38ba8", "", tr("monitor.acc_unavailable"), "--",
                 turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
-                acc_sub="Offline", turn_sub="--"
+                acc_sub="Offline", turn_sub="--", acc_color="#f38ba8"
             )
             self.card_status.set_value("● STOPPED")
             self.card_acc.set_value(tr("monitor.acc_unavailable"))
@@ -251,7 +263,7 @@ class DashboardView(QWidget):
                     self.status_bar.set_state(
                         "● PAUSED", "#f9e2af", "20130", acc, turn_str,
                         turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
-                        acc_sub=acc_sub, turn_sub=turn_sub
+                        acc_sub=acc_sub, turn_sub=turn_sub, acc_color="#f9e2af"
                     )
                     self.card_status.set_value("● PAUSED")
                     self.btn_toggle_proxy.setText(tr("btn.resume_rotation"))
@@ -260,11 +272,11 @@ class DashboardView(QWidget):
                     is_active = (status == "sending")
                     st_text = "● ACTIVE" if is_active else "● STANDBY"
                     st_color = "#a6e3a1" if is_active else "#89b4fa"
-                    acc_sub = tr("dashboard.model_rule_sub", rule=model_routed) if model_routed else tr("dashboard.rr_sub", acc=acc)
+                    acc_sub = tr("dashboard.model_rule_sub", rule=model_routed) if model_routed else tr("dashboard.rr_mode")
                     self.status_bar.set_state(
                         st_text, st_color, "20130", acc, turn_str,
                         turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
-                        acc_sub=acc_sub, turn_sub=turn_sub
+                        acc_sub=acc_sub, turn_sub=turn_sub, acc_color="#a6e3a1"
                     )
                     self.card_status.set_value(st_text)
                     self.btn_toggle_proxy.setText(tr("btn.pause_rotation"))

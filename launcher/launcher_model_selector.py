@@ -110,7 +110,7 @@ class MultiModelSelector(QWidget):
             if val and val.lower() not in seen:
                 seen.add(val.lower())
                 candidates.append(val)
-        return candidates
+        return sorted(candidates, key=str.lower)
 
     def refresh_models(self, selected_accounts: list, scan_cache: dict):
         self._selected_accounts = list(selected_accounts or [])

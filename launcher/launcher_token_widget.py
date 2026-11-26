@@ -51,10 +51,16 @@ class _MetricCard(QFrame):
 
         # Thuộc tính tương thích ngược
         self.lbl_extra = QLabel("")
+        self._last_val = "0"
+        self._last_extra = ""
 
     def set_data(self, val_str: str, extra_str: str = ""):
-        self.lbl_val.setText(val_str)
-        self.lbl_extra.setText(extra_str)
+        if val_str != self._last_val:
+            self._last_val = val_str
+            self.lbl_val.setText(val_str)
+        if extra_str != self._last_extra:
+            self._last_extra = extra_str
+            self.lbl_extra.setText(extra_str)
 
 class TokenMetricsBar(QWidget):
     """Cụm 3 thẻ thống kê Token Metrics với bộ chọn khung thời gian."""

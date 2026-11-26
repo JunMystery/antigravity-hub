@@ -5,6 +5,7 @@ Cung cấp cơ chế Multi-signal Detection tự động đóng dialog trong < 3
 """
 
 import os
+import sys
 import time
 import json
 import webbrowser
@@ -22,6 +23,7 @@ from launcher_storage import (
     CONFIG_DIR, ACCOUNTS_FILE, load_accounts, load_data
 )
 from launcher_proxy import ensure_proxy_running
+from launcher_browser_close import try_close_oauth_browser_tab
 
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 
@@ -98,8 +100,32 @@ def start_google_oauth_flow(parent_window):
 
     is_done = False
 
-    def check_poll():
+    def complete_oauth():
         nonlocal is_done
+        if is_done:
+            return
+        is_done = True
+        poll_timer.stop()
+        if sys.platform != "win32":
+            dialog.accept()
+            return
+        attempts = {"count": 0}
+        close_timer = QTimer(dialog)
+
+        def attempt_close():
+            attempts["count"] += 1
+            if try_close_oauth_browser_tab():
+                close_timer.stop()
+                QTimer.singleShot(100, dialog.accept)
+            elif attempts["count"] >= 10:
+                close_timer.stop()
+                dialog.accept()
+
+        close_timer.timeout.connect(attempt_close)
+        close_timer.start(100)
+        attempt_close()
+
+    def check_poll():
         if is_done:
             return
 
@@ -109,8 +135,7 @@ def start_google_oauth_flow(parent_window):
                 with open(STATUS_FILE, "r", encoding="utf-8") as sf:
                     st = json.load(sf)
                 if st.get("status") == "account_added" and st.get("timestamp", 0) >= (start_time_ms - 2000):
-                    is_done = True
-                    dialog.accept()
+                    complete_oauth()
                     return
             except Exception:
                 pass
@@ -122,14 +147,12 @@ def start_google_oauth_flow(parent_window):
                 if cur_mtime > initial_mtime:
                     cur_accs = load_accounts()
                     if len(cur_accs) > len(initial_accs):
-                        is_done = True
-                        dialog.accept()
+                        complete_oauth()
                         return
                     for a in cur_accs:
                         k = (a.get("id") or a.get("email") or "").lower()
                         if k not in initial_snapshot or initial_snapshot[k] != a.get("accessToken"):
-                            is_done = True
-                            dialog.accept()
+                            complete_oauth()
                             return
             except Exception:
                 pass
@@ -151,3 +174,5 @@ def start_google_oauth_flow(parent_window):
         parent_window._refresh_list()
         parent_window.on_refresh_all_quota()
         parent_window.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{tr('oauth.success_info')}</span></b>")
+        if hasattr(parent_window, "activate_window"):
+            parent_window.activate_window()

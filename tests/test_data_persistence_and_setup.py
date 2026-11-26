@@ -98,6 +98,52 @@ class TestDataPersistenceAndSetup(unittest.TestCase):
         self.assertTrue(out["hasAccBak"])
         self.assertTrue(out["hasProfBak"])
 
+    def test_save_data_guards_partial_empty_wipe_and_recovers_from_accounts(self):
+        with patch.object(launcher_storage, "CONFIG_DIR", self.cfg_dir), \
+             patch.object(launcher_storage, "PROFILES_FILE", self.prof_file), \
+             patch.object(launcher_storage, "ACCOUNTS_FILE", self.acc_file), \
+             patch.object(launcher_storage, "PROFILES_BASE_DIR", self.prof_base):
+            launcher_storage.save_accounts([{"id": "a1", "email": "vip@test.com", "name": "VIP", "refreshToken": "r1"}])
+            launcher_storage.save_data({
+                "settings": {"requests_per_account": 3, "model_rules": [{"id": "r1", "pattern": "claude"}]},
+                "profiles": [{"id": "a1", "email": "vip@test.com", "name": "VIP", "order": 1, "enabled": True}]
+            })
+            # Lần lưu thứ hai với dữ liệu hợp lệ để tạo .bak có đủ profiles
+            launcher_storage.save_data({
+                "settings": {"requests_per_account": 4, "model_rules": [{"id": "r1", "pattern": "claude"}]},
+                "profiles": [{"id": "a1", "email": "vip@test.com", "name": "VIP", "order": 1, "enabled": True}]
+            })
+
+            # Partial / empty overwrite không được làm mất profiles hay model_rules
+            launcher_storage.save_data({"settings": {"window_geometry": "abc"}})
+            launcher_storage.save_data({"settings": {"window_maximized": True}, "profiles": []})
+            data_after = launcher_storage.load_data()
+            self.assertEqual(len(data_after["profiles"]), 1)
+            self.assertEqual(data_after["settings"]["model_rules"][0]["pattern"], "claude")
+            self.assertEqual(data_after["settings"]["window_maximized"], True)
+
+            # update_settings_fields chỉ cập nhật khóa settings chỉ định
+            launcher_storage.update_settings_fields({"window_geometry": "xyz"})
+            data_upd = launcher_storage.load_data()
+            self.assertEqual(len(data_upd["profiles"]), 1)
+            self.assertEqual(data_upd["settings"]["window_geometry"], "xyz")
+            self.assertEqual(data_upd["settings"]["model_rules"][0]["pattern"], "claude")
+
+            # Tự phục hồi profiles từ accounts.json nếu profiles.json bị ghi rỗng bên ngoài
+            existing_dir = os.path.join(self.prof_base, "vip_test_com")
+            os.makedirs(existing_dir, exist_ok=True)
+            with open(self.prof_file, "w", encoding="utf-8") as f:
+                json.dump({"settings": {"requests_per_account": 4}, "profiles": []}, f)
+            recovered = launcher_storage.load_data()
+            self.assertEqual(len(recovered["profiles"]), 1)
+            self.assertEqual(recovered["profiles"][0]["email"], "vip@test.com")
+            self.assertEqual(recovered["profiles"][0]["data_dir"], existing_dir)
+
+            # Xóa chủ động tài khoản cuối cùng vẫn phải xóa được sạch
+            final_data = launcher_storage.delete_account_completely(recovered["profiles"][0])
+            self.assertEqual(final_data["profiles"], [])
+            self.assertEqual(launcher_storage.load_accounts(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

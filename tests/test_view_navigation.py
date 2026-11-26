@@ -3,17 +3,22 @@
 Headless unit tests for Sidebar Navigation, Dashboard, Accounts, and Settings views.
 """
 
+import os
 import sys
+import shutil
+import tempfile
 import unittest
-sys.path.insert(0, "launcher")
+from unittest.mock import patch
 
-from PyQt6.QtWidgets import QApplication
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LAUNCHER_DIR = os.path.join(ROOT_DIR, "launcher")
+if LAUNCHER_DIR not in sys.path:
+    sys.path.insert(0, LAUNCHER_DIR)
+
+from PyQt6.QtWidgets import QApplication, QComboBox
 from PyQt6.QtCore import Qt
 
-from launcher_sidebar import SidebarNav
-from launcher_view_dashboard import DashboardView
-from launcher_view_accounts import AccountsView
-from launcher_view_settings import SettingsView
+import launcher_storage, launcher_log_manager, launcher_view_settings, launcher_window
 from launcher_window import LauncherWindow
 
 app = QApplication.instance() or QApplication(["-platform", "offscreen"])
@@ -23,7 +28,35 @@ class TestViewNavigation(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        cls._tmp_dir = tempfile.mkdtemp()
+        cfg_dir = os.path.join(cls._tmp_dir, "config")
+        prof_base = os.path.join(cls._tmp_dir, "profiles_base")
+        os.makedirs(cfg_dir, exist_ok=True)
+        patch_specs = [
+            (launcher_storage, "CONFIG_DIR", cfg_dir),
+            (launcher_storage, "PROFILES_FILE", os.path.join(cfg_dir, "profiles.json")),
+            (launcher_storage, "ACCOUNTS_FILE", os.path.join(cfg_dir, "accounts.json")),
+            (launcher_storage, "PROFILES_BASE_DIR", prof_base),
+            (launcher_log_manager, "CONFIG_DIR", cfg_dir),
+            (launcher_view_settings, "CONFIG_DIR", cfg_dir),
+            (launcher_window, "PROFILES_BASE_DIR", prof_base),
+        ]
+        cls._patches = [patch.object(m, k, v) for m, k, v in patch_specs] + [
+            patch.object(launcher_window, fn) for fn in ("ensure_proxy_running", "prune_logs", "create_desktop_shortcut")
+        ]
+        for p in cls._patches:
+            p.start()
         cls.win = LauncherWindow()
+        cls.win.monitor_timer.stop()
+        cls.win.auto_quota_timer.stop()
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "win") and cls.win:
+            cls.win.close()
+        for p in reversed(getattr(cls, "_patches", [])):
+            p.stop()
+        shutil.rmtree(getattr(cls, "_tmp_dir", ""), ignore_errors=True)
 
     def test_sidebar_signal_and_active_state(self):
         """Xác nhận SidebarNav phát tín hiệu view_changed và cập nhật nút active không chứa emoji rác."""
@@ -58,26 +91,36 @@ class TestViewNavigation(unittest.TestCase):
         self.assertEqual(self.win.stack.currentWidget(), self.win.view_settings)
 
     def test_dashboard_components_and_filtering(self):
-        """Xác nhận DashboardView chứa CompactStatusBar, grouped buttons và bảng feed."""
+        """Xác nhận Sidebar có lockup + nút icon Launch và DashboardView có StatusBar + Dropdown gọn."""
         dash = self.win.view_dashboard
+        sidebar = self.win.sidebar
+        self.assertIsNotNone(sidebar.logo_lockup)
+        self.assertFalse(sidebar.logo_lockup.pixmap().isNull())
+        self.assertIn("#6c7086", sidebar.logo_lockup.styleSheet())
+        self.assertIn("#1e1e2e", sidebar.logo_lockup.styleSheet())
         self.assertIsNotNone(dash.status_bar)
+        self.assertFalse(dash.status_bar.lbl_acc.isHidden())
+        self.assertIsInstance(dash.combo_account, QComboBox)
+        self.assertEqual(dash.combo_account.height(), 30)
         self.assertIsNotNone(dash.card_status)
         self.assertIsNotNone(dash.card_acc)
         self.assertIsNotNone(dash.card_turn)
         self.assertIsNotNone(dash.card_total)
 
-        # Kiểm tra action buttons và objectNames (không chứa emoji rác)
-        self.assertEqual(dash.btn_launch_app.objectName(), "btn_launch_app")
-        self.assertEqual(dash.btn_launch_ide.objectName(), "btn_launch_ide")
+        # Kiểm tra nút Launch trên Sidebar (icon + nhãn ngắn) và thuộc tính tương thích trên LauncherWindow
+        self.assertEqual(sidebar.btn_launch_app.objectName(), "btn_launch_app")
+        self.assertEqual(sidebar.btn_launch_ide.objectName(), "btn_launch_ide")
+        self.assertTrue(sidebar.btn_launch_app.property("keep_short_label"))
+        self.assertTrue(sidebar.btn_launch_ide.property("keep_short_label"))
+        self.assertEqual(sidebar.btn_launch_app.text(), "App")
+        self.assertEqual(sidebar.btn_launch_ide.text(), "IDE")
+        self.assertFalse(sidebar.btn_launch_app.icon().isNull())
+        self.assertFalse(sidebar.btn_launch_ide.icon().isNull())
         self.assertEqual(dash.btn_next.objectName(), "btn_proxy_next")
         self.assertEqual(dash.btn_toggle_proxy.objectName(), "btn_proxy_toggle")
-        self.assertNotIn("🚀", dash.btn_launch_app.text())
-        self.assertNotIn("💻", dash.btn_launch_ide.text())
-        self.assertNotIn("⏭", dash.btn_next.text())
 
-        # Kiểm tra thuộc tính trên LauncherWindow
-        self.assertIs(self.win.btn_launch_app, dash.btn_launch_app)
-        self.assertIs(self.win.btn_launch_ide, dash.btn_launch_ide)
+        self.assertIs(self.win.btn_launch_app, sidebar.btn_launch_app)
+        self.assertIs(self.win.btn_launch_ide, sidebar.btn_launch_ide)
         self.assertIs(self.win.btn_next, dash.btn_next)
         self.assertIs(self.win.btn_toggle_proxy, dash.btn_toggle_proxy)
 
@@ -149,13 +192,13 @@ class TestViewNavigation(unittest.TestCase):
             self.assertGreaterEqual(widget.height(), 32)
 
     def test_launch_buttons_retain_labels_after_restore(self):
-        """Xác nhận nhãn nút không bị mất sau khi hoàn tất chu trình khởi chạy (không chứa emoji rác)."""
+        """Xác nhận nút Launch giữ nguyên nhãn ngắn App/IDE và cập nhật tooltip khi chạy."""
         from unittest.mock import patch
         import time
 
         win = self.win
-        self.assertNotIn("🚀", win.btn_launch_app.text())
-        self.assertNotIn("💻", win.btn_launch_ide.text())
+        self.assertEqual(win.btn_launch_app.text(), "App")
+        self.assertEqual(win.btn_launch_ide.text(), "IDE")
 
         with patch.object(win, "_get_selected", return_value={"data_dir": "/fake/profile"}), \
              patch("launcher_window.launch_profile", return_value=True):
@@ -168,7 +211,8 @@ class TestViewNavigation(unittest.TestCase):
                 time.sleep(0.05)
 
             self.assertTrue(win.btn_launch_app.isEnabled())
-            self.assertNotIn("🚀", win.btn_launch_app.text())
+            self.assertEqual(win.btn_launch_app.text(), "App")
+            self.assertIn("App", win.btn_launch_app.toolTip())
 
         with patch.object(win, "_get_selected", return_value={"data_dir": "/fake/profile"}), \
              patch("launcher_window.launch_profile", return_value=True):
@@ -178,17 +222,19 @@ class TestViewNavigation(unittest.TestCase):
                 app.processEvents()
                 time.sleep(0.05)
             self.assertTrue(win.btn_launch_ide.isEnabled())
-            self.assertNotIn("💻", win.btn_launch_ide.text())
+            self.assertEqual(win.btn_launch_ide.text(), "IDE")
+            self.assertIn("IDE", win.btn_launch_ide.toolTip())
 
     def test_dashboard_dynamic_retranslation(self):
-        """Xác nhận DashboardView.retranslate_ui() cập nhật đúng text theo ngôn ngữ EN / VI."""
+        """Xác nhận SidebarNav và DashboardView.retranslate_ui() cập nhật đúng text/tooltip EN / VI."""
         from launcher_i18n import set_language
         dash = self.win.view_dashboard
+        sidebar = self.win.sidebar
 
         set_language("en")
         self.win.retranslate_ui()
-        self.assertEqual(dash.btn_launch_app.text(), "Launch App (2.0)")
-        self.assertEqual(dash.btn_launch_ide.text(), "Launch IDE")
+        self.assertEqual(sidebar.btn_launch_app.toolTip(), "Launch App (2.0)")
+        self.assertEqual(sidebar.btn_launch_ide.toolTip(), "Launch IDE")
         self.assertEqual(dash.btn_next.text(), "Next")
         self.assertEqual(dash.card_status.lbl_title.text(), "Status")
         self.assertEqual(dash.card_acc.lbl_title.text(), "Account")
@@ -197,14 +243,14 @@ class TestViewNavigation(unittest.TestCase):
         self.assertEqual(self.win.view_settings.btn_open_data.text(), "Open Data Directory")
         self.assertEqual(self.win.view_settings.btn_clear_log.text(), "Clear Log")
         self.assertEqual(self.win.view_settings.grp_logs.title(), "Log Management & Retention")
-        self.assertEqual(self.win.sidebar.buttons["accounts"].text(), "Accounts")
-        self.assertEqual(self.win.sidebar.buttons["logs"].text(), "Logs")
-        self.assertEqual(self.win.sidebar.buttons["settings"].text(), "Settings")
+        self.assertEqual(sidebar.buttons["accounts"].text(), "Accounts")
+        self.assertEqual(sidebar.buttons["logs"].text(), "Logs")
+        self.assertEqual(sidebar.buttons["settings"].text(), "Settings")
 
         set_language("vi")
         self.win.retranslate_ui()
-        self.assertEqual(dash.btn_launch_app.text(), "Khởi chạy App (2.0)")
-        self.assertEqual(dash.btn_launch_ide.text(), "Khởi chạy IDE")
+        self.assertEqual(sidebar.btn_launch_app.toolTip(), "Khởi chạy App (2.0)")
+        self.assertEqual(sidebar.btn_launch_ide.toolTip(), "Khởi chạy IDE")
         self.assertEqual(dash.btn_next.text(), "Kế tiếp")
         self.assertEqual(dash.card_status.lbl_title.text(), "Trạng thái")
         self.assertEqual(dash.card_acc.lbl_title.text(), "Tài khoản")
@@ -213,18 +259,20 @@ class TestViewNavigation(unittest.TestCase):
         self.assertEqual(self.win.view_settings.btn_open_data.text(), "Mở thư mục Data")
         self.assertEqual(self.win.view_settings.btn_clear_log.text(), "Xóa Log")
         self.assertEqual(self.win.view_settings.grp_logs.title(), "Quản lý & Lưu trữ Nhật ký")
-        self.assertEqual(self.win.sidebar.buttons["accounts"].text(), "Tài khoản")
-        self.assertEqual(self.win.sidebar.buttons["logs"].text(), "Nhật ký")
-        self.assertEqual(self.win.sidebar.buttons["settings"].text(), "Cài đặt")
+        self.assertEqual(sidebar.buttons["accounts"].text(), "Tài khoản")
+        self.assertEqual(sidebar.buttons["logs"].text(), "Nhật ký")
+        self.assertEqual(sidebar.buttons["settings"].text(), "Cài đặt")
 
     def test_logs_view_features(self):
-        """Xác nhận LogsView có bảng 5 cột, toolbar và hỗ trợ lọc tìm kiếm."""
+        """Xác nhận LogsView có bảng 4 cột, toolbar và hỗ trợ lọc tìm kiếm."""
         from launcher_token_delegate import TokenInOutDelegate
         logs_view = self.win.view_logs
         self.assertIsNotNone(logs_view)
-        self.assertEqual(logs_view.table.columnCount(), 5)
-        self.assertEqual(logs_view.table.horizontalHeaderItem(2).text(), "Model")
-        self.assertIsInstance(logs_view.table.itemDelegateForColumn(4), TokenInOutDelegate)
+        self.assertEqual(logs_view.table.columnCount(), 4)
+        headers = [logs_view.table.horizontalHeaderItem(c).text() for c in range(4)]
+        self.assertEqual(headers[1], "Model")
+        self.assertFalse(any(h in headers for h in ("Thread", "Luồng")))
+        self.assertIsInstance(logs_view.table.itemDelegateForColumn(3), TokenInOutDelegate)
         self.assertIsNotNone(logs_view.txt_search)
         self.assertIsNotNone(logs_view.btn_refresh)
         self.assertIsNotNone(logs_view.btn_open_file)
@@ -233,16 +281,16 @@ class TestViewNavigation(unittest.TestCase):
 
         # Kiểm tra nạp dữ liệu mẫu bao gồm cả sự kiện hệ thống
         logs_view._entries = [
-            {"time": "12:00:01", "thread": "MAIN", "action": "POST streamGenerateContent", "acc": "user@gmail.com", "tokens": "1.8K / 420"},
-            {"time": "12:00:02", "thread": "SUBAGENT", "action": "GET models", "acc": "sub@gmail.com", "tokens": "-- / --"},
-            {"time": "12:00:03", "thread": "MAIN", "action": "Client Abort", "acc": "user@gmail.com", "tokens": "--"},
-            {"time": "12:00:04", "thread": "MAIN", "action": "Rotator Restore", "acc": "user@gmail.com", "tokens": "--"}
+            {"time": "12:00:01", "action": "POST streamGenerateContent", "acc": "user@gmail.com", "tokens": "1.8K / 420"},
+            {"time": "12:00:02", "action": "GET models", "acc": "sub@gmail.com", "tokens": "-- / --"},
+            {"time": "12:00:03", "action": "Client Abort", "acc": "user@gmail.com", "tokens": "--"},
+            {"time": "12:00:04", "action": "Rotator Restore", "acc": "user@gmail.com", "tokens": "--"}
         ]
         logs_view._populate_table()
         self.assertEqual(logs_view.table.rowCount(), 4)
 
         # Lọc tìm kiếm
-        logs_view.txt_search.setText("SUBAGENT")
+        logs_view.txt_search.setText("sub@gmail.com")
         self.assertEqual(logs_view.table.rowCount(), 1)
         logs_view.txt_search.setText("")
         self.assertEqual(logs_view.table.rowCount(), 4)

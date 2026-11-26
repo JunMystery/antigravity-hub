@@ -6,6 +6,8 @@ Lưu trữ độc lập với proxy.log, gom nhóm theo khung giờ (24h, 7D, 30
 
 import os
 import json
+import copy
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
@@ -15,6 +17,8 @@ except ImportError:
     from launcher_storage import CONFIG_DIR
 
 TOKEN_METRICS_FILE = os.path.join(CONFIG_DIR, "token_metrics.json")
+_METRICS_FILE_CACHE = {}
+_AGG_CACHE = {}
 
 
 def get_token_metrics_path() -> str:
@@ -22,10 +26,22 @@ def get_token_metrics_path() -> str:
     return TOKEN_METRICS_FILE
 
 
+def _stat_sig(file_path: str):
+    try:
+        st = os.stat(file_path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def load_token_metrics(file_path: Optional[str] = None) -> Dict[str, Any]:
-    """Đọc dữ liệu token từ file JSON độc lập."""
+    """Đọc dữ liệu token từ file JSON độc lập (có bộ nhớ đệm theo mtime/size)."""
     target_path = file_path or TOKEN_METRICS_FILE
-    if os.path.exists(target_path):
+    sig = _stat_sig(target_path)
+    if sig is not None:
+        cached = _METRICS_FILE_CACHE.get(target_path)
+        if cached and cached[0] == sig:
+            return copy.deepcopy(cached[1])
         try:
             with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
                 data = json.load(f)
@@ -34,7 +50,8 @@ def load_token_metrics(file_path: Optional[str] = None) -> Dict[str, Any]:
                         data["lifetime"] = {"sent": 0, "received": 0, "cached": 0, "total": 0, "requests": 0}
                     if "hourly" not in data:
                         data["hourly"] = {}
-                    return data
+                    _METRICS_FILE_CACHE[target_path] = (sig, data)
+                    return copy.deepcopy(data)
         except Exception:
             pass
     return {
@@ -78,8 +95,18 @@ def get_aggregated_tokens(
     Tổng hợp số liệu token theo khung thời gian: '24h', '7d', '30d', 'all'.
     Trả về dict gồm: sent, received, cached, total, requests, cache_ratio.
     """
-    data = metrics_data if metrics_data is not None else load_token_metrics()
     tf = (timeframe or "24h").lower()
+    use_cache = metrics_data is None and now_dt is None
+    cache_key = None
+    if use_cache:
+        sig = _stat_sig(TOKEN_METRICS_FILE)
+        minute_key = "all" if tf == "all" else int(time.time() // 60)
+        cache_key = (TOKEN_METRICS_FILE, tf, sig, minute_key)
+        cached_agg = _AGG_CACHE.get((TOKEN_METRICS_FILE, tf))
+        if cached_agg and cached_agg[0] == cache_key:
+            return dict(cached_agg[1])
+
+    data = metrics_data if metrics_data is not None else load_token_metrics()
 
     if tf == "all":
         life = data.get("lifetime", {})
@@ -89,7 +116,10 @@ def get_aggregated_tokens(
         t = life.get("total", s + r)
         n = life.get("requests", 0)
         ratio = round((c / (s + c) * 100), 1) if (s + c) > 0 else 0.0
-        return {"sent": s, "received": r, "cached": c, "total": t, "requests": n, "cache_ratio": ratio}
+        res = {"sent": s, "received": r, "cached": c, "total": t, "requests": n, "cache_ratio": ratio}
+        if use_cache:
+            _AGG_CACHE[(TOKEN_METRICS_FILE, tf)] = (cache_key, res)
+        return dict(res)
 
     delta_map = {
         "24h": timedelta(hours=24),
@@ -124,7 +154,10 @@ def get_aggregated_tokens(
             continue
 
     ratio = round((cached_total / (sent_total + cached_total) * 100), 1) if (sent_total + cached_total) > 0 else 0.0
-    return {
+    res = {
         "sent": sent_total, "received": recv_total, "cached": cached_total,
         "total": total_tokens, "requests": req_count, "cache_ratio": ratio
     }
+    if use_cache:
+        _AGG_CACHE[(TOKEN_METRICS_FILE, tf)] = (cache_key, res)
+    return dict(res)

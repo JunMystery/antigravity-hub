@@ -5,33 +5,29 @@ cho Antigravity Launcher: MetricCard, BadgeLabel, SettingRow, NavButton.
 """
 
 from PyQt6.QtWidgets import (
-    QFrame, QLabel, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QComboBox
+    QFrame, QLabel, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QSizePolicy
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 
 class CompactStatusBar(QFrame):
     """Thanh tóm tắt trạng thái liền khối (Seamless Unified Status Bar) 3 phân vùng hiện đại."""
 
-    account_selected = pyqtSignal(str)
-
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._syncing_combo = False
-        self._cached_options = None
-        self._cached_selected_key = None
+        self._last_state = None
         self.setObjectName("compact_status_bar")
-        self.setFixedHeight(68)
+        self.setFixedHeight(60)
         self.setStyleSheet(
             "QFrame#compact_status_bar { background-color: #24273a; border: 1px solid #363a4f; "
             "border-radius: 8px; }"
         )
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 6, 16, 6)
-        layout.setSpacing(14)
+        layout.setContentsMargins(14, 4, 14, 4)
+        layout.setSpacing(12)
 
         # Cột 1: Trạng thái Micro-Proxy
         col_status = QVBoxLayout()
-        col_status.setSpacing(2)
+        col_status.setSpacing(1)
         self.lbl_status_title = QLabel("Trạng thái")
         self.lbl_status_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
         self.lbl_status = QLabel("● STANDBY")
@@ -49,26 +45,18 @@ class CompactStatusBar(QFrame):
         div1.setStyleSheet("color: #313244; border: none; border-left: 1px solid #313244;")
         layout.addWidget(div1)
 
-        # Cột 2: Tài khoản đang hoạt động + bộ chọn inline
+        # Cột 2: Tài khoản đang proxy (nổi bật)
         col_acc = QVBoxLayout()
-        col_acc.setSpacing(2)
+        col_acc.setSpacing(1)
         self.lbl_acc_title = QLabel("Tài khoản")
         self.lbl_acc_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
         self.lbl_acc = QLabel("--")
-        self.lbl_acc.hide()
-        self.combo_account = QComboBox(self)
-        self.combo_account.setObjectName("combo_dashboard_account")
-        self.combo_account.setFixedHeight(23)
-        self.combo_account.setStyleSheet(
-            "QComboBox#combo_dashboard_account { background-color: #181825; color: #cdd6f4; "
-            "border: 1px solid #45475a; border-radius: 5px; padding: 2px 8px; font-size: 12px; font-weight: bold; } "
-            "QComboBox#combo_dashboard_account:hover { border-color: #89b4fa; }"
-        )
-        self.combo_account.currentIndexChanged.connect(self._on_combo_changed)
+        self.lbl_acc.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.lbl_acc.setStyleSheet("color: #a6e3a1; font-size: 15px; font-weight: bold;")
         self.lbl_acc_sub = QLabel("Round Robin")
         self.lbl_acc_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
         col_acc.addWidget(self.lbl_acc_title)
-        col_acc.addWidget(self.combo_account)
+        col_acc.addWidget(self.lbl_acc)
         col_acc.addWidget(self.lbl_acc_sub)
         layout.addLayout(col_acc, 1)
 
@@ -80,7 +68,7 @@ class CompactStatusBar(QFrame):
 
         # Cột 3: Lượt quay vòng hiện tại
         col_turn = QVBoxLayout()
-        col_turn.setSpacing(2)
+        col_turn.setSpacing(1)
         self.lbl_turn_title = QLabel("Lượt")
         self.lbl_turn_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
         self.lbl_turn = QLabel("0/1")
@@ -92,37 +80,16 @@ class CompactStatusBar(QFrame):
         col_turn.addWidget(self.lbl_turn_sub)
         layout.addLayout(col_turn)
 
-    def _on_combo_changed(self, idx: int):
-        if self._syncing_combo or idx < 0:
-            return
-        key = self.combo_account.itemData(idx)
-        if key is not None:
-            self.account_selected.emit(str(key))
-
-    def set_account_options(self, options: list, selected_key: str = "AUTO"):
-        """Cập nhật danh sách tài khoản khả dụng trên dropdown mà không làm gián đoạn khi menu đang mở."""
-        if self.combo_account.view().isVisible():
-            return
-        normalized = [(str(k), str(lbl)) for k, lbl in (options or [])]
-        if normalized == self._cached_options and selected_key == self._cached_selected_key:
-            return
-        self._syncing_combo = True
-        try:
-            if normalized != self._cached_options:
-                self.combo_account.clear()
-                for key, label in normalized:
-                    self.combo_account.addItem(label, key)
-                self._cached_options = normalized
-            idx = self.combo_account.findData(selected_key)
-            if idx >= 0:
-                self.combo_account.setCurrentIndex(idx)
-            self._cached_selected_key = selected_key
-        finally:
-            self._syncing_combo = False
-
     def set_state(self, status_text: str, status_color: str, port_text: str, acc_email: str, turn_text: str,
                   turn_label: str = None, status_label: str = None, acc_label: str = None,
-                  acc_sub: str = None, turn_sub: str = None):
+                  acc_sub: str = None, turn_sub: str = None, acc_color: str = None):
+        state_key = (
+            status_text, status_color, port_text, acc_email, turn_text,
+            turn_label, status_label, acc_label, acc_sub, turn_sub, acc_color
+        )
+        if state_key == self._last_state:
+            return
+        self._last_state = state_key
         if status_label:
             self.lbl_status_title.setText(status_label)
         if acc_label:
@@ -134,6 +101,8 @@ class CompactStatusBar(QFrame):
         self.lbl_status.setStyleSheet(f"color: {status_color}; font-size: 15px; font-weight: bold;")
         self.lbl_status_sub.setText(port_sub)
         self.lbl_acc.setText(acc_email or "--")
+        self.lbl_acc.setToolTip(acc_email or "")
+        self.lbl_acc.setStyleSheet(f"color: {acc_color or '#a6e3a1'}; font-size: 15px; font-weight: bold;")
         if acc_sub is not None:
             self.lbl_acc_sub.setText(acc_sub)
         if turn_sub is not None:

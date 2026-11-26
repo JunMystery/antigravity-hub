@@ -54,27 +54,26 @@ async function executeGoogleChatRequest(
     const fwdHeaders = buildForwardHeaders(origHeaders, host, account, finalBodyBuffer);
     const ttfbTimeoutMs = computeTtfbTimeoutMs(attempt, requestStartedAt);
     const attemptStartedAt = Date.now();
-
     const outgoingOptions = {
       hostname: host, port: 443, path: reqUrl, method: reqMethod,
       headers: fwdHeaders, agent: getAgentForAccount(account)
     };
-
     let activeGRes = null;
     let isAborted = false;
     let sessionEnded = false;
-    let timeoutTimer = null;
+    let timeoutTimer = null, timeoutMs = 0;
     let detachClientClose = () => {};
 
-    function clearAllTimeout() { if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; } }
+    function clearAllTimeout() { if (timeoutTimer) { clearTimeout(timeoutTimer); timeoutTimer = null; } timeoutMs = 0; }
     function safeEndSession() {
       clearAllTimeout();
       detachClientClose();
       if (!sessionEnded) { sessionEnded = true; sessionAffinity.endRequest(); }
     }
-
     function resetTimeout(ms) {
+      if (timeoutTimer && timeoutMs === ms && typeof timeoutTimer.refresh === "function") { timeoutTimer.refresh(); return; }
       clearAllTimeout();
+      timeoutMs = ms;
       timeoutTimer = setTimeout(() => {
         const totalElapsed = Date.now() - requestStartedAt;
         console.warn(`[UPSTREAM-TIMEOUT] [WARN] Timeout (${ms}ms, total=${totalElapsed}ms, attempt=#${attempt}) tren Google (${host}) cho [${accName}]`);

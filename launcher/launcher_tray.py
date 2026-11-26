@@ -16,6 +16,7 @@ from launcher_i18n import tr
 from launcher_paths import APP_ICON
 from launcher_widget import SettingRow
 from launcher_prompt_dialog import ask_hide_on_launch_prompt, ask_close_action_prompt, show_about_prompt
+from launcher_window_state import hide_window_to_tray, capture_window_state
 
 class TrayManager(QObject):
     """Quản lý biểu tượng khay hệ thống, menu ngữ cảnh và tương tác kích hoạt."""
@@ -156,7 +157,7 @@ def handle_hide_on_launch(win):
         return
     choice = win.data.get("settings", {}).get("hide_on_launch", "ask")
     if choice == "always":
-        win.hide()
+        hide_window_to_tray(win)
         win.tray.notify_minimized()
     elif choice == "never":
         pass
@@ -167,7 +168,7 @@ def handle_hide_on_launch(win):
             win.data.setdefault("settings", {})["hide_on_launch"] = "always" if should_hide else "never"
             save_data(win.data)
         if should_hide:
-            win.hide()
+            hide_window_to_tray(win)
             win.tray.notify_minimized()
 
 def handle_close_event(win, event):
@@ -178,7 +179,7 @@ def handle_close_event(win, event):
     action = win.data.get("settings", {}).get("close_action", "ask")
     if action == "hide":
         event.ignore()
-        win.hide()
+        hide_window_to_tray(win)
         win.tray.notify_minimized()
         return
     if action == "exit":
@@ -192,7 +193,7 @@ def handle_close_event(win, event):
             win.data.setdefault("settings", {})["close_action"] = "hide"
             save_data(win.data)
         event.ignore()
-        win.hide()
+        hide_window_to_tray(win)
         win.tray.notify_minimized()
     elif chosen == "exit":
         if remember:
@@ -205,6 +206,7 @@ def handle_close_event(win, event):
 
 def clean_exit(win, event=None):
     """Dọn dẹp tài nguyên và thoát ứng dụng an toàn."""
+    capture_window_state(win, persist=True)
     if hasattr(win, "tray") and hasattr(win.tray, "tray_icon"):
         win.tray.tray_icon.hide()
     win.monitor_timer.stop()
