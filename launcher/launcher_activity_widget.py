@@ -12,8 +12,10 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QSizePolicy
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 
 from launcher_i18n import tr
+from launcher_theme import get_palette
 from launcher_log_manager import get_log_path, parse_log_lines, read_tail_lines
 from launcher_token_delegate import TokenInOutDelegate
 
@@ -94,7 +96,7 @@ class ActivityLogsPanel(QWidget):
 
         hdr_lay = QHBoxLayout()
         self.lbl_panel_title = QLabel(tr("activity.title") or "Hoạt động gần nhất (50 requests)")
-        self.lbl_panel_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: bold;")
+        self.lbl_panel_title.setObjectName("status_title")
         hdr_lay.addWidget(self.lbl_panel_title)
         hdr_lay.addStretch()
         layout.addLayout(hdr_lay)
@@ -124,6 +126,7 @@ class ActivityLogsPanel(QWidget):
 
     def _create_table(self) -> QTableWidget:
         table = QTableWidget(0, 3)
+        table.setObjectName("activity_table")
         self._setup_table_headers(table)
         table.setItemDelegateForColumn(1, TokenInOutDelegate(table))
         hdr = table.horizontalHeader()
@@ -135,18 +138,14 @@ class ActivityLogsPanel(QWidget):
         table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(28)
         table.setShowGrid(False)
-        table.setStyleSheet(
-            "QTableWidget { background-color: #181825; border: 1px solid #313244; border-radius: 6px; } "
-            "QHeaderView { background-color: #24273a; border-top-left-radius: 5px; border-top-right-radius: 5px; border: none; } "
-            "QHeaderView::section { background-color: #24273a; color: #a6adc8; font-weight: bold; padding: 4px 8px; border: none; } "
-            "QTableCornerButton::section { background-color: #24273a; border: none; }"
-        )
         return table
 
     def _set_filter(self, tag: str):
         self.active_filter = tag.upper()
 
     def _populate_table(self, items: List[Dict[str, Any]]):
+        p = get_palette()
+        c_model, c_in_out, c_when = QColor(p["text"]), QColor(p["text_sub"]), QColor(p["text_muted"])
         self.table.setUpdatesEnabled(False)
         try:
             self.table.setRowCount(0)
@@ -165,9 +164,9 @@ class ActivityLogsPanel(QWidget):
                 it_in_out.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 it_when.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-                it_model.setForeground(Qt.GlobalColor.white)
-                it_in_out.setForeground(Qt.GlobalColor.lightGray)
-                it_when.setForeground(Qt.GlobalColor.gray)
+                it_model.setForeground(c_model)
+                it_in_out.setForeground(c_in_out)
+                it_when.setForeground(c_when)
 
                 self.table.setItem(r, 0, it_model)
                 self.table.setItem(r, 1, it_in_out)
@@ -240,6 +239,12 @@ class ActivityLogsPanel(QWidget):
             self.update_logs(parsed)
         except Exception:
             pass
+
+    def refresh_theme(self):
+        """Đồng bộ màu chữ và vùng bảng khi đổi Theme Light/Dark."""
+        if self._history:
+            self._populate_table(self._history)
+        self.table.viewport().update()
 
     def retranslate_ui(self):
         """Cập nhật tiêu đề bảng khi đổi ngôn ngữ."""

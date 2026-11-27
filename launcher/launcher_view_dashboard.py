@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt
 
 from launcher_storage import CONFIG_DIR
 from launcher_i18n import tr
+from launcher_theme import get_palette
 from launcher_proxy import is_proxy_running
 from launcher_widget import CompactStatusBar
 from launcher_activity_widget import ActivityLogsPanel
@@ -75,11 +76,6 @@ class DashboardView(QWidget):
         self.combo_account = QComboBox(self)
         self.combo_account.setObjectName("combo_dashboard_account")
         self.combo_account.setFixedHeight(30)
-        self.combo_account.setStyleSheet(
-            "QComboBox#combo_dashboard_account { background-color: #24273a; color: #cdd6f4; "
-            "border: 1px solid #363a4f; border-radius: 6px; padding: 2px 10px; font-size: 12px; font-weight: 500; } "
-            "QComboBox#combo_dashboard_account:hover { border-color: #89b4fa; }"
-        )
         self.combo_account.currentIndexChanged.connect(self._on_account_combo_changed)
         ctrl_box.addWidget(self.combo_account, 1)
 
@@ -127,6 +123,13 @@ class DashboardView(QWidget):
             self.token_bar.retranslate_ui()
         if hasattr(self, "activity_panel"):
             self.activity_panel.retranslate_ui()
+
+    def refresh_theme(self):
+        """Đồng bộ màu sắc Dashboard khi chuyển đổi Theme."""
+        self.status_bar.refresh_theme()
+        self.token_bar.refresh_theme()
+        self.activity_panel.refresh_theme()
+        self.update_dashboard()
 
     def _on_account_combo_changed(self, idx: int):
         if self._syncing_combo or idx < 0:
@@ -177,6 +180,7 @@ class DashboardView(QWidget):
 
     def update_dashboard(self):
         """Cập nhật dữ liệu từ live_status.json và proxy.log lên Dashboard."""
+        p = get_palette()
         status_lbl = tr("monitor.col_status") or "Trạng thái"
         acc_lbl = tr("monitor.col_acc") or "Tài khoản"
         turn_lbl = tr("monitor.col_turn") or "Lượt"
@@ -209,9 +213,9 @@ class DashboardView(QWidget):
                     pass
             self._sync_account_selector(persisted_pinned, persisted_paused)
             self.status_bar.set_state(
-                "● STOPPED", "#f38ba8", "", tr("monitor.acc_unavailable"), "--",
+                "● STOPPED", p["red"], "", tr("monitor.acc_unavailable"), "--",
                 turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
-                acc_sub="Offline", turn_sub="--", acc_color="#f38ba8"
+                acc_sub="Offline", turn_sub="--", acc_color=p["red"]
             )
             self.card_status.set_value("● STOPPED")
             self.card_acc.set_value(tr("monitor.acc_unavailable"))
@@ -261,9 +265,9 @@ class DashboardView(QWidget):
                         else (tr("dashboard.pinned_deactive_sub") if is_deactive else tr("dashboard.pinned_sub"))
                     )
                     self.status_bar.set_state(
-                        "● PAUSED", "#f9e2af", "20130", acc, turn_str,
+                        "● PAUSED", p["yellow"], "20130", acc, turn_str,
                         turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
-                        acc_sub=acc_sub, turn_sub=turn_sub, acc_color="#f9e2af"
+                        acc_sub=acc_sub, turn_sub=turn_sub, acc_color=p["yellow"]
                     )
                     self.card_status.set_value("● PAUSED")
                     self.btn_toggle_proxy.setText(tr("btn.resume_rotation"))
@@ -271,12 +275,12 @@ class DashboardView(QWidget):
                 else:
                     is_active = (status == "sending")
                     st_text = "● ACTIVE" if is_active else "● STANDBY"
-                    st_color = "#a6e3a1" if is_active else "#89b4fa"
+                    st_color = p["green"] if is_active else p["accent"]
                     acc_sub = tr("dashboard.model_rule_sub", rule=model_routed) if model_routed else tr("dashboard.rr_mode")
                     self.status_bar.set_state(
                         st_text, st_color, "20130", acc, turn_str,
                         turn_label=turn_lbl, status_label=status_lbl, acc_label=acc_lbl,
-                        acc_sub=acc_sub, turn_sub=turn_sub, acc_color="#a6e3a1"
+                        acc_sub=acc_sub, turn_sub=turn_sub, acc_color=p["green"]
                     )
                     self.card_status.set_value(st_text)
                     self.btn_toggle_proxy.setText(tr("btn.pause_rotation"))

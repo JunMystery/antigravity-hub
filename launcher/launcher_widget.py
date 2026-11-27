@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
 """
 Module cung cấp các widget giao diện dùng chung (Reusable UI Components)
-cho Antigravity Launcher: MetricCard, BadgeLabel, SettingRow, NavButton.
+cho Antigravity Launcher: CompactStatusBar, MetricCard, BadgeLabel, SettingRow, NavButton.
 """
 
 from PyQt6.QtWidgets import (
     QFrame, QLabel, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QSizePolicy
 )
 from PyQt6.QtCore import Qt
+
+from launcher_theme import get_palette, repolish_widget
+
 
 class CompactStatusBar(QFrame):
     """Thanh tóm tắt trạng thái liền khối (Seamless Unified Status Bar) 3 phân vùng hiện đại."""
@@ -17,68 +20,66 @@ class CompactStatusBar(QFrame):
         self._last_state = None
         self.setObjectName("compact_status_bar")
         self.setFixedHeight(60)
-        self.setStyleSheet(
-            "QFrame#compact_status_bar { background-color: #24273a; border: 1px solid #363a4f; "
-            "border-radius: 8px; }"
-        )
         layout = QHBoxLayout(self)
         layout.setContentsMargins(14, 4, 14, 4)
         layout.setSpacing(12)
 
-        # Cột 1: Trạng thái Micro-Proxy
         col_status = QVBoxLayout()
         col_status.setSpacing(1)
         self.lbl_status_title = QLabel("Trạng thái")
-        self.lbl_status_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
+        self.lbl_status_title.setObjectName("status_title")
         self.lbl_status = QLabel("● STANDBY")
-        self.lbl_status.setStyleSheet("color: #89b4fa; font-size: 15px; font-weight: bold;")
         self.lbl_status_sub = QLabel("Port 20130")
-        self.lbl_status_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
+        self.lbl_status_sub.setObjectName("status_sub")
         col_status.addWidget(self.lbl_status_title)
         col_status.addWidget(self.lbl_status)
         col_status.addWidget(self.lbl_status_sub)
         layout.addLayout(col_status)
 
-        # Phân cách đứng 1
         div1 = QFrame()
+        div1.setObjectName("status_divider")
         div1.setFrameShape(QFrame.Shape.VLine)
-        div1.setStyleSheet("color: #313244; border: none; border-left: 1px solid #313244;")
         layout.addWidget(div1)
 
-        # Cột 2: Tài khoản đang proxy (nổi bật)
         col_acc = QVBoxLayout()
         col_acc.setSpacing(1)
         self.lbl_acc_title = QLabel("Tài khoản")
-        self.lbl_acc_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
+        self.lbl_acc_title.setObjectName("status_title")
         self.lbl_acc = QLabel("--")
         self.lbl_acc.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.lbl_acc.setStyleSheet("color: #a6e3a1; font-size: 15px; font-weight: bold;")
         self.lbl_acc_sub = QLabel("Round Robin")
-        self.lbl_acc_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
+        self.lbl_acc_sub.setObjectName("status_sub")
         col_acc.addWidget(self.lbl_acc_title)
         col_acc.addWidget(self.lbl_acc)
         col_acc.addWidget(self.lbl_acc_sub)
         layout.addLayout(col_acc, 1)
 
-        # Phân cách đứng 2
         div2 = QFrame()
+        div2.setObjectName("status_divider")
         div2.setFrameShape(QFrame.Shape.VLine)
-        div2.setStyleSheet("color: #313244; border: none; border-left: 1px solid #313244;")
         layout.addWidget(div2)
 
-        # Cột 3: Lượt quay vòng hiện tại
         col_turn = QVBoxLayout()
         col_turn.setSpacing(1)
         self.lbl_turn_title = QLabel("Lượt")
-        self.lbl_turn_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
+        self.lbl_turn_title.setObjectName("status_title")
         self.lbl_turn = QLabel("0/1")
-        self.lbl_turn.setStyleSheet("color: #b4befe; font-size: 15px; font-weight: bold;")
         self.lbl_turn_sub = QLabel("Current Turn")
-        self.lbl_turn_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
+        self.lbl_turn_sub.setObjectName("status_sub")
         col_turn.addWidget(self.lbl_turn_title)
         col_turn.addWidget(self.lbl_turn)
         col_turn.addWidget(self.lbl_turn_sub)
         layout.addLayout(col_turn)
+
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        p = get_palette()
+        self._last_state = None
+        self.lbl_status.setStyleSheet(f"color: {p['accent']}; font-size: 15px; font-weight: bold;")
+        self.lbl_acc.setStyleSheet(f"color: {p['green']}; font-size: 15px; font-weight: bold;")
+        self.lbl_turn.setStyleSheet(f"color: {p['accent_turn']}; font-size: 15px; font-weight: bold;")
+        repolish_widget(self)
 
     def set_state(self, status_text: str, status_color: str, port_text: str, acc_email: str, turn_text: str,
                   turn_label: str = None, status_label: str = None, acc_label: str = None,
@@ -102,12 +103,13 @@ class CompactStatusBar(QFrame):
         self.lbl_status_sub.setText(port_sub)
         self.lbl_acc.setText(acc_email or "--")
         self.lbl_acc.setToolTip(acc_email or "")
-        self.lbl_acc.setStyleSheet(f"color: {acc_color or '#a6e3a1'}; font-size: 15px; font-weight: bold;")
+        self.lbl_acc.setStyleSheet(f"color: {acc_color or get_palette()['green']}; font-size: 15px; font-weight: bold;")
         if acc_sub is not None:
             self.lbl_acc_sub.setText(acc_sub)
         if turn_sub is not None:
             self.lbl_turn_sub.setText(turn_sub)
         self.lbl_turn.setText(turn_text)
+
 
 class MetricCard(QFrame):
     """Thẻ hiển thị chỉ số tổng quan với tiêu đề, giá trị chính và mô tả phụ."""
@@ -116,27 +118,31 @@ class MetricCard(QFrame):
         super().__init__(parent)
         self.setObjectName("metric_card")
         self.setFixedHeight(70)
-        self.setStyleSheet(
-            "QFrame#metric_card { background-color: #24273a; border: 1px solid #363a4f; "
-            "border-radius: 8px; padding: 4px; }"
-        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 6, 10, 6)
         layout.setSpacing(2)
 
         self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet("color: #a6adc8; font-size: 11px; font-weight: 500;")
+        self.lbl_title.setObjectName("metric_title")
         layout.addWidget(self.lbl_title)
 
         self.lbl_value = QLabel(value)
-        self.lbl_value.setStyleSheet("color: #cdd6f4; font-size: 17px; font-weight: bold;")
         layout.addWidget(self.lbl_value)
 
         self.lbl_sub = QLabel(subtext)
-        self.lbl_sub.setStyleSheet("color: #6c7086; font-size: 10px;")
+        self.lbl_sub.setObjectName("metric_sub")
         if not subtext:
             self.lbl_sub.hide()
         layout.addWidget(self.lbl_sub)
+        self.refresh_theme()
+
+    def refresh_theme(self):
+        p = get_palette()
+        self.setStyleSheet(
+            f"QFrame#metric_card {{ background-color: {p['bg_card']}; border: 1px solid {p['border_card']}; "
+            "border-radius: 8px; padding: 4px; }"
+        )
+        self.lbl_value.setStyleSheet(f"color: {p['text']}; font-size: 17px; font-weight: bold;")
 
     def set_value(self, value: str):
         self.lbl_value.setText(value)
@@ -166,11 +172,32 @@ class BadgeLabel(QLabel):
     def __init__(self, text: str, badge_type: str = "main", parent=None):
         super().__init__(text, parent)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._badge_type = badge_type
         self.set_badge(text, badge_type)
 
+    def _palette_badge(self, badge_type: str):
+        p = get_palette()
+        key_map = {
+            "main": p["accent"], "standby": p["accent"],
+            "subagent": p["accent_ide"],
+            "general": p["text_sub"],
+            "status": p["green"], "active": p["green"],
+            "error": p["red"], "paused": p["yellow"],
+        }
+        fg = key_map.get(badge_type.lower())
+        if not fg:
+            return p["text"], p["bg_surface"], p["border_strong"]
+        border = p["border_strong"] if badge_type.lower() == "general" else fg
+        return fg, p["bg_surface"], border if badge_type.lower() == "general" else fg
+
+    def refresh_theme(self):
+        """Đồng bộ lại màu badge theo Theme hiện hành."""
+        self.set_badge(self.text(), self._badge_type)
+
     def set_badge(self, text: str, badge_type: str = "main"):
+        self._badge_type = badge_type
         self.setText(text)
-        fg, bg, border = self.COLOR_MAP.get(badge_type.lower(), ("#cdd6f4", "#313244", "#45475a"))
+        fg, bg, border = self._palette_badge(badge_type)
         self.setStyleSheet(
             f"color: {fg}; background-color: {bg}; border: 1px solid {border}; "
             "border-radius: 4px; padding: 2px 7px; font-size: 10px; font-weight: bold;"
@@ -189,12 +216,12 @@ class SettingRow(QWidget):
         lbl_box = QVBoxLayout()
         lbl_box.setSpacing(2)
         self.lbl_main = QLabel(label_text)
-        self.lbl_main.setStyleSheet("color: #cdd6f4; font-size: 12px; font-weight: 500;")
+        self.lbl_main.setObjectName("setting_title")
         lbl_box.addWidget(self.lbl_main)
 
         if desc:
             self.lbl_desc = QLabel(desc)
-            self.lbl_desc.setStyleSheet("color: #6c7086; font-size: 11px;")
+            self.lbl_desc.setObjectName("setting_desc")
             lbl_box.addWidget(self.lbl_desc)
 
         layout.addLayout(lbl_box, 1)
@@ -202,7 +229,7 @@ class SettingRow(QWidget):
 
 
 class NavButton(QPushButton):
-    """Nút điều hướng trên Sidebar với trạng thái Active/Inactive và kiểu dáng hiện đại."""
+    """Nút điều hướng trên Sidebar với trạng thái Active/Inactive đồng bộ QSS."""
 
     def __init__(self, icon_text: str, label: str, view_id: str, parent=None):
         display_text = f"{icon_text}  {label}".strip() if icon_text else label
@@ -210,6 +237,7 @@ class NavButton(QPushButton):
         self.view_id = view_id
         self.icon_text = icon_text
         self.label_text = label
+        self.setProperty("nav_btn", True)
         self.setFixedHeight(38)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.set_active(False)
@@ -221,15 +249,5 @@ class NavButton(QPushButton):
         self.setText(f"{self.icon_text}  {self.label_text}".strip() if self.icon_text else self.label_text)
 
     def set_active(self, active: bool):
-        if active:
-            self.setStyleSheet(
-                "QPushButton { background-color: #313244; color: #89b4fa; font-weight: bold; "
-                "border: none; border-left: 3px solid #89b4fa; border-radius: 6px; text-align: left; padding-left: 12px; font-size: 13px; } "
-                "QPushButton:hover { background-color: #363a4f; }"
-            )
-        else:
-            self.setStyleSheet(
-                "QPushButton { background-color: transparent; color: #a6adc8; font-weight: 500; "
-                "border: none; border-radius: 6px; text-align: left; padding-left: 15px; font-size: 13px; } "
-                "QPushButton:hover { background-color: #24273a; color: #cdd6f4; }"
-            )
+        self.setProperty("active", bool(active))
+        repolish_widget(self)

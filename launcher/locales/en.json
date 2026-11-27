@@ -221,6 +221,7 @@
   "model_rules.col_strategy": "Strategy",
   "model_rules.col_account": "Target Accounts",
   "model_rules.col_models": "Available Models",
+  "model_rules.col_status": "Status",
   "model_rules.col_actions": "Actions",
   "model_rules.match_contains": "Contains",
   "model_rules.match_exact": "Exact Match",
@@ -256,5 +257,9 @@
   "model_rules.warning_title": "Invalid Input",
   "model_rules.err_empty_pattern": "Please select at least one model.",
   "model_rules.err_invalid_regex": "Invalid pattern expression: {pattern}",
-  "model_rules.err_no_account": "Please select at least one target account."
+  "model_rules.err_no_account": "Please select at least one target account.",
+  "theme.label": "Theme",
+  "theme.system": "System (Auto)",
+  "theme.dark": "Dark",
+  "theme.light": "Light"
 }

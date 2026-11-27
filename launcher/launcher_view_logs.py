@@ -16,6 +16,7 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices
 
 from launcher_i18n import tr
+from launcher_theme import get_palette
 from launcher_log_manager import get_log_path, clear_log, read_tail_lines
 from launcher_token_delegate import TokenInOutDelegate
 
@@ -39,7 +40,7 @@ class LogsView(QWidget):
         self.win = win
         self.setObjectName("logs_view")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
-        self.setStyleSheet("QWidget#logs_view { background-color: #1e1e2e; color: #cdd6f4; }")
+        self.setAutoFillBackground(True)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -51,35 +52,23 @@ class LogsView(QWidget):
 
         self.txt_search = QLineEdit(self)
         self.txt_search.setPlaceholderText(tr("logs.search_placeholder") or "Tìm kiếm theo từ khóa...")
-        self.txt_search.setStyleSheet(
-            "QLineEdit { background-color: #181825; border: 1px solid #313244; "
-            "border-radius: 6px; padding: 5px 10px; color: #cdd6f4; } "
-            "QLineEdit:focus { border: 1px solid #89b4fa; }"
-        )
         self.txt_search.textChanged.connect(self._filter_table)
         toolbar.addWidget(self.txt_search, stretch=1)
 
         self.btn_refresh = QPushButton("↻ " + (tr("full_log.btn_refresh") or "Làm mới"), self)
-        self.btn_refresh.setStyleSheet("background-color: #313244; border-radius: 6px; padding: 6px 12px; color: #cdd6f4;")
         self.btn_refresh.clicked.connect(lambda: self.load_logs(force=True))
         toolbar.addWidget(self.btn_refresh)
 
         self.btn_open_file = QPushButton(tr("logs.btn_open_file") or "Mở tệp Log", self)
-        self.btn_open_file.setStyleSheet("background-color: #313244; border-radius: 6px; padding: 6px 12px; color: #cdd6f4;")
         self.btn_open_file.clicked.connect(self._open_log_file)
         toolbar.addWidget(self.btn_open_file)
 
         self.btn_copy = QPushButton(tr("full_log.btn_copy") or "Sao chép", self)
-        self.btn_copy.setStyleSheet("background-color: #313244; border-radius: 6px; padding: 6px 12px; color: #cdd6f4;")
         self.btn_copy.clicked.connect(self._copy_logs)
         toolbar.addWidget(self.btn_copy)
 
         self.btn_clear = QPushButton(tr("btn.clear_log") or "Xóa Log", self)
-        self.btn_clear.setStyleSheet(
-            "QPushButton { background-color: rgba(243, 139, 168, 0.15); color: #f38ba8; "
-            "border: 1px solid #f38ba8; border-radius: 6px; padding: 6px 12px; } "
-            "QPushButton:hover { background-color: rgba(243, 139, 168, 0.25); }"
-        )
+        self.btn_clear.setObjectName("btn_danger_outline")
         self.btn_clear.clicked.connect(self._on_clear_clicked)
         toolbar.addWidget(self.btn_clear)
 
@@ -87,6 +76,7 @@ class LogsView(QWidget):
 
         # Unified Lightweight Table: Time | Model | Account | Tokens (4 cols)
         self.table = QTableWidget(0, 4, self)
+        self.table.setObjectName("logs_table")
         self._setup_table_headers()
         self.table.setItemDelegateForColumn(3, TokenInOutDelegate(self.table))
         hdr = self.table.horizontalHeader()
@@ -101,13 +91,6 @@ class LogsView(QWidget):
         self.table.verticalHeader().setVisible(False)
         self.table.verticalHeader().setDefaultSectionSize(28)
         self.table.setShowGrid(False)
-        self.table.setStyleSheet(
-            "QTableWidget { background-color: #181825; border: 1px solid #313244; "
-            "border-radius: 6px; color: #cdd6f4; } "
-            "QHeaderView { background-color: #24273a; border-top-left-radius: 5px; border-top-right-radius: 5px; border: none; } "
-            "QHeaderView::section { background-color: #24273a; color: #a6adc8; font-weight: bold; padding: 4px 8px; border: none; } "
-            "QTableCornerButton::section { background-color: #24273a; border: none; }"
-        )
         layout.addWidget(self.table, stretch=1)
         self._entries: List[Dict[str, str]] = []
         self._last_log_sig = None
@@ -204,6 +187,9 @@ class LogsView(QWidget):
         self._populate_table()
 
     def _populate_table(self):
+        p = get_palette()
+        c_time, c_act, c_acc = QColor(p["text_sub"]), QColor(p["text"]), QColor(p["text_secondary"])
+        c_tok_ok, c_tok_dim = QColor(p["green"]), QColor(p["text_muted"])
         query = self.txt_search.text().strip().lower()
         self.table.setUpdatesEnabled(False)
         try:
@@ -217,17 +203,17 @@ class LogsView(QWidget):
                 self.table.insertRow(r)
 
                 it_time = QTableWidgetItem(e["time"])
-                it_time.setForeground(QColor("#a6adc8"))
+                it_time.setForeground(c_time)
 
                 it_act = QTableWidgetItem(e["action"])
-                it_act.setForeground(QColor("#cdd6f4"))
+                it_act.setForeground(c_act)
 
                 it_acc = QTableWidgetItem(e["acc"])
-                it_acc.setForeground(QColor("#bac2de"))
+                it_acc.setForeground(c_acc)
 
                 it_tok = QTableWidgetItem(e["tokens"])
                 it_tok.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                it_tok.setForeground(QColor("#a6e3a1") if e["tokens"] not in ("-- / --", "--") else QColor("#6c7086"))
+                it_tok.setForeground(c_tok_ok if e["tokens"] not in ("-- / --", "--") else c_tok_dim)
 
                 self.table.setItem(r, 0, it_time)
                 self.table.setItem(r, 1, it_act)
@@ -262,6 +248,11 @@ class LogsView(QWidget):
             clear_log()
             self._last_log_sig = None
             self.load_logs(force=True)
+
+    def refresh_theme(self):
+        """Đồng bộ màu chữ bảng Logs theo Theme hiện tại."""
+        self._populate_table()
+        self.table.viewport().update()
 
     def retranslate_ui(self):
         self.txt_search.setPlaceholderText(tr("logs.search_placeholder") or "Tìm kiếm theo từ khóa...")

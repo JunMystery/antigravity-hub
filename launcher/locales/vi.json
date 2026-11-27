@@ -220,6 +220,7 @@
   "model_rules.col_strategy": "Chiến lược",
   "model_rules.col_account": "Tài khoản đích",
   "model_rules.col_models": "Model khả dụng",
+  "model_rules.col_status": "Trạng thái",
   "model_rules.col_actions": "Thao tác",
   "model_rules.match_contains": "Chứa từ khóa",
   "model_rules.match_exact": "Khớp chính xác",
@@ -256,5 +257,9 @@
   "model_rules.err_invalid_regex": "Biểu thức khớp không hợp lệ: {pattern}",
   "model_rules.err_no_account": "Vui lòng chọn ít nhất một tài khoản đích.",
   "model_rules.scanning": "Đang quét...",
-  "model_rules.scan_empty": "Chưa quét hoặc API không trả về thêm model"
+  "model_rules.scan_empty": "Chưa quét hoặc API không trả về thêm model",
+  "theme.label": "Giao diện",
+  "theme.system": "Hệ thống (Tự động)",
+  "theme.dark": "Tối (Dark)",
+  "theme.light": "Sáng (Light)"
 }

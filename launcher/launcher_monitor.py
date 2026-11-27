@@ -16,6 +16,7 @@ from PyQt6.QtCore import Qt
 from launcher_storage import CONFIG_DIR, PROXY_PORT
 from launcher_proxy import is_proxy_running, stop_proxy, ensure_proxy_running
 from launcher_i18n import tr
+from launcher_theme import get_palette
 
 STATUS_FILE = os.path.join(CONFIG_DIR, "live_status.json")
 CMD_FILE = os.path.join(CONFIG_DIR, "proxy_cmd.json")
@@ -50,6 +51,7 @@ def send_proxy_cmd(win, cmd: str, params: dict = None):
 
 def build_monitor_frame(win) -> QGroupBox:
     """Tạo khung hiển thị trạng thái hoạt động trực tiếp của Micro-Proxy."""
+    p = get_palette()
     box = QGroupBox(tr("monitor.box_title"))
     layout = QVBoxLayout(box)
     layout.setSpacing(6)
@@ -57,11 +59,11 @@ def build_monitor_frame(win) -> QGroupBox:
 
     top_row = QHBoxLayout()
     win.mon_dot = QLabel("● STANDBY")
-    win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
+    win.mon_dot.setStyleSheet(f"color: {p['accent']}; font-weight: bold;")
     top_row.addWidget(win.mon_dot)
 
     win.mon_ep = QLabel(tr("monitor.endpoint_ready"))
-    win.mon_ep.setStyleSheet("color: #bac2de;")
+    win.mon_ep.setStyleSheet(f"color: {p['text_secondary']};")
     top_row.addWidget(win.mon_ep, 1)
 
     win.btn_proxy_next = QPushButton(tr("monitor.btn_next"))
@@ -90,9 +92,11 @@ def build_monitor_frame(win) -> QGroupBox:
 
 def update_monitor_ui(win):
     """Cập nhật dữ liệu từ live_status.json lên giao diện Monitor."""
+    p = get_palette()
+    win.mon_ep.setStyleSheet(f"color: {p['text_secondary']};")
     if not is_proxy_running():
         win.mon_dot.setText("● STOPPED")
-        win.mon_dot.setStyleSheet("color: #f38ba8; font-weight: bold;")
+        win.mon_dot.setStyleSheet(f"color: {p['red']}; font-weight: bold;")
         win.mon_ep.setText(tr("monitor.proxy_stopped"))
         win.mon_acc.setText(tr("monitor.acc_label") + tr("monitor.acc_unavailable"))
         win.mon_req.setText(tr("monitor.turn_label") + "--")
@@ -106,7 +110,7 @@ def update_monitor_ui(win):
 
     if not os.path.exists(STATUS_FILE):
         win.mon_dot.setText("● STANDBY")
-        win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
+        win.mon_dot.setStyleSheet(f"color: {p['accent']}; font-weight: bold;")
         win.mon_ep.setText(tr("monitor.listening_ready"))
         win.mon_acc.setText(tr("monitor.acc_label") + "--")
         win.mon_req.setText(tr("monitor.turn_label") + "0/1")
@@ -139,23 +143,23 @@ def update_monitor_ui(win):
         # Cập nhật đèn trạng thái
         if status == "sending":
             win.mon_dot.setText("● ACTIVE")
-            win.mon_dot.setStyleSheet("color: #a6e3a1; font-weight: bold;")
+            win.mon_dot.setStyleSheet(f"color: {p['green']}; font-weight: bold;")
             if endpoint:
-                ep_html = endpoint.replace("[SUBAGENT]", "<span style='color:#cba6f7;font-weight:bold;'>[SUBAGENT]</span>").replace("[CHAT]", "<span style='color:#89b4fa;font-weight:bold;'>[CHAT]</span>")
+                ep_html = endpoint.replace("[SUBAGENT]", f"<span style='color:{p['accent_ide']};font-weight:bold;'>[SUBAGENT]</span>").replace("[CHAT]", f"<span style='color:{p['accent']};font-weight:bold;'>[CHAT]</span>")
                 win.mon_ep.setText(f"{method} {ep_html}")
             else:
                 win.mon_ep.setText(tr("monitor.forwarding"))
         elif status == "FAILOVER":
             win.mon_dot.setText("● FAILOVER")
-            win.mon_dot.setStyleSheet("color: #fab387; font-weight: bold;")
+            win.mon_dot.setStyleSheet(f"color: {p['peach']}; font-weight: bold;")
             win.mon_ep.setText(data.get("message", tr("monitor.forwarding")))
         elif is_paused:
             win.mon_dot.setText("● PAUSED")
-            win.mon_dot.setStyleSheet("color: #f9e2af; font-weight: bold;")
+            win.mon_dot.setStyleSheet(f"color: {p['yellow']}; font-weight: bold;")
             win.mon_ep.setText(tr("monitor.paused_desc"))
         else:
             win.mon_dot.setText("● STANDBY")
-            win.mon_dot.setStyleSheet("color: #89b4fa; font-weight: bold;")
+            win.mon_dot.setStyleSheet(f"color: {p['accent']}; font-weight: bold;")
             win.mon_ep.setText(tr("monitor.listening_ready"))
 
         win.mon_acc.setText(f"{tr('monitor.acc_label')}<b>{account_name}</b>")

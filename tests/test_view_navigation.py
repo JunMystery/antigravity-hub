@@ -96,8 +96,8 @@ class TestViewNavigation(unittest.TestCase):
         sidebar = self.win.sidebar
         self.assertIsNotNone(sidebar.logo_lockup)
         self.assertFalse(sidebar.logo_lockup.pixmap().isNull())
-        self.assertIn("#6c7086", sidebar.logo_lockup.styleSheet())
-        self.assertIn("#1e1e2e", sidebar.logo_lockup.styleSheet())
+        self.assertIn("border: none", sidebar.logo_lockup.styleSheet())
+        self.assertIn("background: transparent", sidebar.logo_lockup.styleSheet())
         self.assertIsNotNone(dash.status_bar)
         self.assertFalse(dash.status_bar.lbl_acc.isHidden())
         self.assertIsInstance(dash.combo_account, QComboBox)

@@ -14,6 +14,7 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QDesktopServices
 
 from launcher_i18n import tr
+from launcher_theme import set_semantic_text, refresh_semantic_label
 from launcher_storage import (
     find_app_binary, find_ide_binary, save_data, get_app_binary, get_ide_binary,
     CONFIG_DIR
@@ -25,6 +26,7 @@ from launcher_log_manager import (
 from launcher_widget import SettingRow
 from launcher_tray import TraySettingsGroup
 from launcher_backup import BackupSettingsGroup
+
 
 class SettingsView(QWidget):
     """View cấu hình hệ thống, đường dẫn thực thi và nhật ký."""
@@ -70,7 +72,6 @@ class SettingsView(QWidget):
         grp_logs_layout = QVBoxLayout(self.grp_logs)
         grp_logs_layout.setSpacing(10)
 
-        # Dropdown số ngày lưu log (7, 30, 90 ngày)
         self.combo_retention = QComboBox()
         self._populate_retention_options()
         self.combo_retention.currentIndexChanged.connect(self._on_retention_changed)
@@ -78,10 +79,9 @@ class SettingsView(QWidget):
         self.row_retention = SettingRow(tr("settings.retention_label"), self.combo_retention, tr("settings.retention_desc"))
         grp_logs_layout.addWidget(self.row_retention)
 
-        # Hàng nút Clear Log
         row_clear = QHBoxLayout()
         self.btn_clear_log = QPushButton(tr("btn.clear_log"))
-        self.btn_clear_log.setStyleSheet("background-color: #f38ba8; color: #11111b; font-weight: bold; padding: 5px 12px;")
+        self.btn_clear_log.setObjectName("btn_danger")
         self.btn_clear_log.clicked.connect(self._on_clear_log)
         row_clear.addWidget(self.btn_clear_log)
 
@@ -98,7 +98,7 @@ class SettingsView(QWidget):
         self.grp_backup = BackupSettingsGroup(self.win, self)
         layout.addWidget(self.grp_backup)
 
-        # 4. Desktop Shortcut & Thư mục Dữ liệu (Data Directory)
+        # 5. Desktop Shortcut & Thư mục Dữ liệu (Data Directory)
         row_sc = QHBoxLayout()
         row_sc.setSpacing(8)
         self.btn_shortcut = QPushButton(tr("settings.create_shortcut"))
@@ -121,14 +121,25 @@ class SettingsView(QWidget):
         self.scroll_area.setWidget(scroll_content)
         outer_layout.addWidget(self.scroll_area, 1)
 
-        # 4. Nút Lưu Cài đặt (ghim cố định ở chân view)
+        # 6. Nút Lưu Cài đặt (ghim cố định ở chân view)
         footer = QHBoxLayout()
         footer.setContentsMargins(16, 8, 16, 14)
         self.btn_save = QPushButton(tr("btn.save"))
-        self.btn_save.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold; height: 32px;")
+        self.btn_save.setObjectName("btn_primary")
+        self.btn_save.setFixedHeight(32)
         self.btn_save.clicked.connect(self._save_settings)
         footer.addWidget(self.btn_save)
         outer_layout.addLayout(footer)
+
+    def _set_status_msg(self, label, text: str, ok: bool):
+        set_semantic_text(label, text, "green" if ok else "red")
+
+    def refresh_theme(self):
+        """Đồng bộ màu các nhãn trạng thái trên SettingsView theo Theme."""
+        refresh_semantic_label(self.lbl_log_status)
+        refresh_semantic_label(self.lbl_sc_status)
+        if hasattr(self, "grp_backup") and hasattr(self.grp_backup, "refresh_theme"):
+            self.grp_backup.refresh_theme()
 
     def _build_path_row(self, parent_layout, label_key, initial_val, on_browse, on_detect):
         lbl = QLabel(f"<b>{tr(label_key)}:</b>")
@@ -173,21 +184,15 @@ class SettingsView(QWidget):
 
     def _create_shortcut(self):
         ok = create_desktop_shortcut()
-        if ok:
-            self.lbl_sc_status.setText(f"<span style='color:#a6e3a1;'>{tr('settings.shortcut_success')}</span>")
-        else:
-            self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{tr('settings.shortcut_failed')}</span>")
+        self._set_status_msg(self.lbl_sc_status, tr("settings.shortcut_success" if ok else "settings.shortcut_failed"), ok)
 
     def _install_cert(self):
         try:
             from launcher_cert import install_root_ca, is_root_ca_installed
-            ok = install_root_ca()
-            if ok or is_root_ca_installed():
-                self.lbl_sc_status.setText(f"<span style='color:#a6e3a1;'>{tr('settings.cert_success')}</span>")
-            else:
-                self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{tr('settings.cert_failed')}</span>")
+            ok = install_root_ca() or is_root_ca_installed()
+            self._set_status_msg(self.lbl_sc_status, tr("settings.cert_success" if ok else "settings.cert_failed"), bool(ok))
         except Exception as e:
-            self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{e}</span>")
+            self._set_status_msg(self.lbl_sc_status, str(e), False)
 
     def _populate_retention_options(self):
         """Nạp danh sách các mốc thời gian lưu trữ theo ngôn ngữ hiện hành."""
@@ -212,8 +217,7 @@ class SettingsView(QWidget):
             os.makedirs(CONFIG_DIR, exist_ok=True)
             QDesktopServices.openUrl(QUrl.fromLocalFile(CONFIG_DIR))
         except Exception as e:
-            err_msg = tr("settings.open_data_failed", error=str(e))
-            self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{err_msg}</span>")
+            self._set_status_msg(self.lbl_sc_status, tr("settings.open_data_failed", error=str(e)), False)
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -267,19 +271,16 @@ class SettingsView(QWidget):
                 self.win.data.setdefault("settings", {})["log_retention_days"] = int(days)
                 save_data(self.win.data)
             pruned = prune_logs(days)
-            msg = tr("settings.retention_updated", days=days, pruned=pruned)
-            self.lbl_log_status.setText(f"<span style='color:#a6e3a1;'>{msg}</span>")
+            self._set_status_msg(self.lbl_log_status, tr("settings.retention_updated", days=days, pruned=pruned), True)
 
     def _on_clear_log(self):
         ok = clear_log()
         if ok:
-            msg = tr("settings.log_cleared")
-            self.lbl_log_status.setText(f"<span style='color:#a6e3a1;'>{msg}</span>")
+            self._set_status_msg(self.lbl_log_status, tr("settings.log_cleared"), True)
             if hasattr(self.win, "view_dashboard") and hasattr(self.win.view_dashboard, "table_feed"):
                 self.win.view_dashboard.table_feed.setRowCount(0)
         else:
-            msg = tr("settings.log_clear_failed")
-            self.lbl_log_status.setText(f"<span style='color:#f38ba8;'>{msg}</span>")
+            self._set_status_msg(self.lbl_log_status, tr("settings.log_clear_failed"), False)
 
     def _save_settings(self):
         self.win.data.setdefault("settings", {})

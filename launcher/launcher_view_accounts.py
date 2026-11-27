@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from launcher_i18n import tr
+from launcher_theme import refresh_semantic_label
 from launcher_treeview import setup_treeview, populate_treeview, update_treeview_headers
 
 class AccountsView(QWidget):
@@ -106,6 +107,13 @@ class AccountsView(QWidget):
     def refresh_list(self, select_id=None):
         """Làm mới dữ liệu hiển thị trên bảng tài khoản."""
         populate_treeview(self.win, select_id=select_id)
+
+    def refresh_theme(self):
+        """Đồng bộ giao diện Bảng tài khoản, Auto Quota và nhãn trạng thái theo Theme."""
+        update_treeview_headers(self.win)
+        refresh_semantic_label(self.lbl_info)
+        if self.treeview is not None:
+            self.treeview.viewport().update()
 
     def retranslate_ui(self):
         """Cập nhật ngôn ngữ các nhãn trong view."""

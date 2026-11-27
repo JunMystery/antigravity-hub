@@ -25,11 +25,11 @@ class TestAdvancedModelRules(unittest.TestCase):
         const { sanitizeModelRules } = require(path.join(process.env.PROXY_DIR, "rotator_state_loader"));
         const r = new AccountRotator({});
         r.allAccounts = [
-          { id: "a1", email: "vip1@test.com", enabled: false, accessToken: "t1" },
+          { id: "a1", email: "vip1@test.com", enabled: true, accessToken: "t1" },
           { id: "a2", email: "vip2@test.com", enabled: true, accessToken: "t2" },
           { id: "a3", email: "std@test.com", enabled: true, accessToken: "t3" }
         ];
-        r.accounts = [r.allAccounts[1], r.allAccounts[2]];
+        r.accounts = [r.allAccounts[0], r.allAccounts[1], r.allAccounts[2]];
         r.modelRules = sanitizeModelRules([
           { pattern: "[invalid-regex", match_type: "regex", accounts: [{ email: "std@test.com" }] },
           { pattern: "^gemini-2\\.5-(pro|flash)$", match_type: "regex", accounts: [{ email: "vip1@test.com" }] },
@@ -39,12 +39,16 @@ class TestAdvancedModelRules(unittest.TestCase):
         const rx = r.allocateAccountForRequest("/v1:chat", "", {}, Buffer.from(JSON.stringify({ model: "gemini-2.5-pro" })));
         const ex = r.allocateAccountForRequest("/v1:chat", "", {}, Buffer.from(JSON.stringify({ model: "claude-opus-4" })));
         const ct = r.allocateAccountForRequest("/v1:chat", "", {}, Buffer.from(JSON.stringify({ model: "claude-sonnet-4" })));
-        console.log(JSON.stringify({ rx: rx.account.email, ex: ex.account.email, ct: ct.account.email }));
+        r.allAccounts[0].enabled = false;
+        r.accounts = [r.allAccounts[1], r.allAccounts[2]];
+        const rxAfterDeactive = r.allocateAccountForRequest("/v1:chat", "", {}, Buffer.from(JSON.stringify({ model: "gemini-2.5-pro" })));
+        console.log(JSON.stringify({ rx: rx.account.email, ex: ex.account.email, ct: ct.account.email, rxAfterDeactive: rxAfterDeactive.account.email }));
         """
         out = run_node(code)
         self.assertEqual(out["rx"], "vip1@test.com")
         self.assertEqual(out["ex"], "vip2@test.com")
         self.assertEqual(out["ct"], "std@test.com")
+        self.assertNotEqual(out["rxAfterDeactive"], "vip1@test.com")
 
     def test_intra_rule_failover_and_fallback_scope(self):
         code = r"""
@@ -52,7 +56,7 @@ class TestAdvancedModelRules(unittest.TestCase):
         const { pickNextRuleAccount, allocateForModelRule } = require(path.join(process.env.PROXY_DIR, "model_rule_engine"));
         const { sanitizeModelRules } = require(path.join(process.env.PROXY_DIR, "rotator_state_loader"));
         const pool = [
-          { id: "a1", email: "u1@test.com", enabled: false },
+          { id: "a1", email: "u1@test.com", enabled: true },
           { id: "a2", email: "u2@test.com", enabled: true },
           { id: "a3", email: "u3@test.com", enabled: true }
         ];
@@ -60,6 +64,7 @@ class TestAdvancedModelRules(unittest.TestCase):
           { pattern: "opus", strategy: "priority", fallback_to_global: false, accounts: [{ email: "u1@test.com" }, { email: "u2@test.com" }] },
           { pattern: "flex", strategy: "priority", fallback_to_global: true, accounts: [{ email: "u1@test.com" }] }
         ]);
+        const strictDeactive = allocateForModelRule("claude-opus", rules, [{ ...pool[0], enabled: false }, pool[1], pool[2]], new Map());
         const strict = allocateForModelRule("claude-opus", rules, pool, new Map());
         const triedStrict = [strict.account];
         pool[0].unhealthyUntil = Date.now() + 60000;
@@ -78,11 +83,13 @@ class TestAdvancedModelRules(unittest.TestCase):
         };
         const flexSkipTried = pickNextRuleAccount([pool[0], pool[1]], [pool[0], pool[1]], true, mockGlobalNext);
         console.log(JSON.stringify({
+          strictDeactiveFirst: strictDeactive.account.email,
           first: strict.account.email, step1: step1?.email || null, step2: step2?.email || null,
           flexAllocNull: flex === null, flexDirect: flexSkipTried?.email || null
         }));
         """
         out = run_node(code)
+        self.assertEqual(out["strictDeactiveFirst"], "u2@test.com")
         self.assertEqual(out["first"], "u1@test.com")
         self.assertEqual(out["step1"], "u2@test.com")
         self.assertIsNone(out["step2"])
@@ -96,10 +103,10 @@ class TestAdvancedModelRules(unittest.TestCase):
         const { sanitizeModelRules } = require(path.join(process.env.PROXY_DIR, "rotator_state_loader"));
         const r = new AccountRotator({});
         r.allAccounts = [
-          { id: "a1", email: "g1@test.com", enabled: false, accessToken: "t1" },
+          { id: "a1", email: "g1@test.com", enabled: true, accessToken: "t1" },
           { id: "a2", email: "g2@test.com", enabled: true, accessToken: "t2" }
         ];
-        r.accounts = [r.allAccounts[1]];
+        r.accounts = [r.allAccounts[0], r.allAccounts[1]];
         r.modelRules = sanitizeModelRules([
           { id: "rr1", pattern: "gemini", strategy: "round_robin", accounts: [{ email: "g1@test.com" }, { email: "g2@test.com" }] },
           { pattern: "legacy-m", account_id: "a1", account_email: "g1@test.com" }
@@ -107,11 +114,15 @@ class TestAdvancedModelRules(unittest.TestCase):
         const bodyG = Buffer.from(JSON.stringify({ model: "gemini-pro" }));
         const picks = [1, 2, 3].map(() => r.allocateAccountForRequest("/v1:chat", "", {}, bodyG).account.email);
         const leg = r.allocateAccountForRequest("/v1:chat", "", {}, Buffer.from(JSON.stringify({ model: "legacy-m-v1" })));
-        console.log(JSON.stringify({ picks, leg: leg.account.email }));
+        r.allAccounts[0].enabled = false;
+        r.accounts = [r.allAccounts[1]];
+        const picksDeactive = [1, 2].map(() => r.allocateAccountForRequest("/v1:chat", "", {}, bodyG).account.email);
+        console.log(JSON.stringify({ picks, leg: leg.account.email, picksDeactive }));
         """
         out = run_node(code)
         self.assertEqual(out["picks"], ["g1@test.com", "g2@test.com", "g1@test.com"])
         self.assertEqual(out["leg"], "g1@test.com")
+        self.assertEqual(out["picksDeactive"], ["g2@test.com", "g2@test.com"])
 
     def test_sidebar_and_model_rules_view_and_dashboard_cleanup(self):
         from PyQt6.QtWidgets import QApplication
@@ -148,8 +159,8 @@ class TestAdvancedModelRules(unittest.TestCase):
             {"id": "a1", "email": "u1@test.com", "enabled": True, "account": {}},
             {"id": "a2", "email": "u2@test.com", "enabled": False, "account": {}}
         ]
-        with patch("launcher_view_model_rules.save_data"), \
-             patch("launcher_view_model_rules.send_proxy_cmd"), \
+        with patch("launcher_view_model_rules.save_data") as mock_save, \
+             patch("launcher_view_model_rules.send_proxy_cmd") as mock_cmd, \
              patch("launcher_view_model_rules.collect_available_accounts", return_value=fake_accs), \
              patch("launcher_view_model_rules.discover_models_from_logs", return_value=["claude-opus"]):
             view = ModelRulesView(win)
@@ -163,8 +174,18 @@ class TestAdvancedModelRules(unittest.TestCase):
             res = simulate_model_route("claude-opus", win.data["settings"]["model_rules"], fake_accs)
             self.assertTrue(res["matched"])
             self.assertEqual(res["accounts"][0]["email"], "u1@test.com")
+            res_deactive = simulate_model_route("claude-sonnet", win.data["settings"]["model_rules"], fake_accs)
+            self.assertFalse(res_deactive["matched"])
+            self.assertEqual([a["email"] for a in res_deactive["accounts"]], ["u1@test.com"])
+            fake_accs[1]["enabled"] = True
+            res_reactivated = simulate_model_route("claude-sonnet", win.data["settings"]["model_rules"], fake_accs)
+            self.assertTrue(res_reactivated["matched"])
+            self.assertEqual([a["email"] for a in res_reactivated["accounts"]], ["u2@test.com"])
+            fake_accs[1]["enabled"] = False
             view.delete_rule(0)
             self.assertEqual(len(win.data["settings"]["model_rules"]), 1)
+            self.assertGreaterEqual(mock_save.call_count, 3)
+            self.assertGreaterEqual(mock_cmd.call_count, 3)
 
     def test_multi_pattern_rule_matching_and_round_robin(self):
         code = r"""

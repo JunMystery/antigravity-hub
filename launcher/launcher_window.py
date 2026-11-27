@@ -18,7 +18,9 @@ from launcher_storage import (
     PROFILES_BASE_DIR
 )
 from launcher_i18n import tr, set_language
-from launcher_layout import apply_launcher_style
+from launcher_theme import (
+    apply_launcher_style, apply_theme_to_window, bind_system_theme_listener
+)
 from launcher_treeview import (
     populate_treeview, get_selected_profile,
     update_row_quota_display, update_treeview_headers
@@ -97,7 +99,12 @@ class LauncherWindow(QMainWindow):
         self.btn_next = self.view_dashboard.btn_next
         self.btn_toggle_proxy = self.view_dashboard.btn_toggle_proxy
         self.combo_lang = self.sidebar.combo_lang
+        self.combo_theme = self.sidebar.combo_theme
         self.tray = TrayManager(self)
+
+        theme_mode = self.data.get("settings", {}).get("theme", "dark")
+        apply_theme_to_window(self, theme_mode)
+        bind_system_theme_listener(self)
 
         self._refresh_list()
         self.update_live_monitor()
@@ -138,6 +145,15 @@ class LauncherWindow(QMainWindow):
             save_data(self.data)
             self.retranslate_ui()
 
+    def on_theme_changed(self, idx):
+        mode = self.combo_theme.itemData(idx)
+        if mode and mode != self.data.get("settings", {}).get("theme", "dark"):
+            self.data.setdefault("settings", {})["theme"] = mode
+            save_data(self.data)
+            apply_theme_to_window(self, mode)
+        elif mode:
+            apply_theme_to_window(self, mode)
+
     def retranslate_ui(self):
         self.setWindowTitle(tr("app.title"))
         self.sidebar.retranslate_ui()
@@ -175,6 +191,8 @@ class LauncherWindow(QMainWindow):
                 p["enabled"] = enabled
                 break
         save_data(self.data)
+        if is_proxy_running():
+            send_proxy_cmd(self, "reload")
         self._refresh_list(select_id=profile_id)
 
     def on_spin_changed(self, val):

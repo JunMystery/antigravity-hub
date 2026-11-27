@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor
 
 from launcher_i18n import tr
+from launcher_theme import get_palette
 
 
 class MultiModelSelector(QWidget):
@@ -73,9 +74,10 @@ class MultiModelSelector(QWidget):
         layout.addLayout(toolbar)
 
         self.lbl_empty = QLabel(tr("model_rules.select_account_first"))
+        self.lbl_empty.setObjectName("lbl_muted")
         self.lbl_empty.setWordWrap(True)
         self.lbl_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_empty.setStyleSheet("color: #a6adc8; padding: 14px;")
+        self.lbl_empty.setStyleSheet("padding: 14px;")
         layout.addWidget(self.lbl_empty, 1)
 
         self.list_models = QListWidget()
@@ -158,7 +160,7 @@ class MultiModelSelector(QWidget):
                 if unsupported:
                     badge = tr("model_rules.model_partial_badge", missing=len(unsupported), total=total_accs)
                     item.setText(f"{pat}  {badge}")
-                    item.setForeground(QColor("#f9e2af"))
+                    item.setForeground(QColor(get_palette()["yellow"]))
                     item.setToolTip(tr(
                         "model_rules.model_unsupported_tip",
                         unsupported="\n".join(unsupported),

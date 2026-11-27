@@ -119,17 +119,17 @@ class TestActivityLogs(unittest.TestCase):
 
     def test_compact_details_formatter(self):
         """Xác nhận định dạng chi tiết log tinh gọn: [Endpoint/Action] → [Email], bỏ (N/M req)."""
-        raw1 = "[MAIN] POST v1internal:streamGenerateContent (1/10 req) -> [ACC: business.junm@gmail.com]"
-        self.assertEqual(format_compact_details(raw1), "POST streamGenerateContent → business.junm@gmail.com")
+        raw1 = "[MAIN] POST v1internal:streamGenerateContent (1/10 req) -> [ACC: main-user@example.com]"
+        self.assertEqual(format_compact_details(raw1), "POST streamGenerateContent → main-user@example.com")
 
-        raw2 = "[STICKY] [SUBAGENT] GET v1beta:models -> [ACC: darkzeuslk@gmail.com]"
-        self.assertEqual(format_compact_details(raw2), "GET models → darkzeuslk@gmail.com")
+        raw2 = "[STICKY] [SUBAGENT] GET v1beta:models -> [ACC: sub-user@example.com]"
+        self.assertEqual(format_compact_details(raw2), "GET models → sub-user@example.com")
 
-        raw3 = "[AUTH-REFRESH] [OK] Đã tự động cấp mới Token từ Google cho: darkzeuslk@gmail.com"
-        self.assertEqual(format_compact_details(raw3), "Refresh Token → darkzeuslk@gmail.com [OK]")
+        raw3 = "[AUTH-REFRESH] [OK] Đã tự động cấp mới Token từ Google cho: sub-user@example.com"
+        self.assertEqual(format_compact_details(raw3), "Refresh Token → sub-user@example.com [OK]")
 
-        raw4 = "[AUTH-PERSIST] [SAVE] Đã mã hóa và lưu Access Token mới cho: darkzeuslk@gmail.com"
-        self.assertEqual(format_compact_details(raw4), "Lưu Token → darkzeuslk@gmail.com [OK]")
+        raw4 = "[AUTH-PERSIST] [SAVE] Đã mã hóa và lưu Access Token mới cho: sub-user@example.com"
+        self.assertEqual(format_compact_details(raw4), "Lưu Token → sub-user@example.com [OK]")
 
     def test_compact_status_bar(self):
         """Xác nhận CompactStatusBar hiển thị liền khối, làm nổi bật tài khoản và format trạng thái chuẩn."""

@@ -48,7 +48,7 @@ function resolveRulePool(rule, allAccounts) {
   for (const ref of rawRefs) {
     if (!ref || (!ref.id && !ref.email)) continue;
     const acc = findAccountByKey(allAccounts, ref);
-    if (acc && !pool.some((existing) => isSameAccount(existing, acc))) {
+    if (acc && acc.enabled !== false && !pool.some((existing) => isSameAccount(existing, acc))) {
       pool.push(acc);
     }
   }

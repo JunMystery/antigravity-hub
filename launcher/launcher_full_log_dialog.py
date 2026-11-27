@@ -24,7 +24,6 @@ class FullLogDialog(QDialog):
         self.setWindowTitle(tr("dialog.full_log_title") or "Toàn bộ Nhật ký Hoạt động (Full Log)")
         self.resize(800, 560)
         self.setMinimumSize(600, 400)
-        self.setStyleSheet("background-color: #1e1e2e; color: #cdd6f4;")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -36,23 +35,14 @@ class FullLogDialog(QDialog):
 
         self.txt_search = QLineEdit(self)
         self.txt_search.setPlaceholderText(tr("full_log.search_placeholder") or "Tìm kiếm trong log...")
-        self.txt_search.setStyleSheet("""
-            QLineEdit {
-                background-color: #181825; border: 1px solid #313244;
-                border-radius: 6px; padding: 5px 10px; color: #cdd6f4;
-            }
-            QLineEdit:focus { border: 1px solid #89b4fa; }
-        """)
         self.txt_search.textChanged.connect(self._filter_logs)
         toolbar.addWidget(self.txt_search, stretch=1)
 
         self.btn_refresh = QPushButton("↻ " + (tr("full_log.btn_refresh") or "Làm mới"), self)
-        self.btn_refresh.setStyleSheet("background-color: #313244; border-radius: 6px; padding: 6px 12px;")
         self.btn_refresh.clicked.connect(self.load_logs)
         toolbar.addWidget(self.btn_refresh)
 
         self.btn_copy = QPushButton(tr("full_log.btn_copy") or "Sao chép", self)
-        self.btn_copy.setStyleSheet("background-color: #313244; border-radius: 6px; padding: 6px 12px;")
         self.btn_copy.clicked.connect(self._copy_all)
         toolbar.addWidget(self.btn_copy)
 
@@ -64,23 +54,16 @@ class FullLogDialog(QDialog):
         mono_font = QFont("Monospace", 9)
         mono_font.setStyleHint(QFont.StyleHint.Monospace)
         self.log_viewer.setFont(mono_font)
-        self.log_viewer.setStyleSheet("""
-            QPlainTextEdit {
-                background-color: #11111b; border: 1px solid #313244;
-                border-radius: 6px; padding: 8px; color: #cdd6f4; line-height: 1.4;
-            }
-        """)
         layout.addWidget(self.log_viewer, stretch=1)
 
         # Thanh trạng thái dưới đáy
         footer = QHBoxLayout()
         self.lbl_status = QLabel("", self)
-        self.lbl_status.setStyleSheet("color: #a6adc8; font-size: 11px;")
+        self.lbl_status.setObjectName("lbl_muted")
         footer.addWidget(self.lbl_status)
         footer.addStretch()
 
         self.btn_close = QPushButton(tr("btn.cancel") or "Đóng", self)
-        self.btn_close.setStyleSheet("background-color: #45475a; border-radius: 6px; padding: 6px 16px;")
         self.btn_close.clicked.connect(self.accept)
         footer.addWidget(self.btn_close)
 

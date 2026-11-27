@@ -8,12 +8,14 @@ from PyQt6.QtWidgets import QPushButton
 from PyQt6.QtGui import QColor
 from PyQt6.QtCore import Qt
 from launcher_storage import save_data
+from launcher_theme import get_palette
 
 def get_quota_color(val: float, is_valid: bool) -> str:
     """Trả về mã màu hiển thị dựa trên tỉ lệ Quota còn lại."""
+    p = get_palette()
     if not is_valid or val < 20.0:
-        return "#f38ba8"
-    return "#a6e3a1" if val >= 50.0 else "#f9e2af"
+        return p["red"]
+    return p["green"] if val >= 50.0 else p["yellow"]
 
 def _set_row_spinner(table, row: int, char: str, color: QColor):
     for col in (3, 4):
@@ -37,7 +39,7 @@ def mark_all_rows_refreshing(win, spinner_char="⠋"):
     if not hasattr(win, "treeview") or not win.treeview:
         return
     table = win.treeview
-    pending_color = QColor("#89b4fa")
+    pending_color = QColor(get_palette()["accent"])
     if not hasattr(win, "refreshing_profile_ids"):
         win.refreshing_profile_ids = set()
     for row in range(table.rowCount()):
@@ -51,7 +53,7 @@ def mark_single_row_refreshing(win, profile_id, spinner_char="⠋"):
     if not hasattr(win, "treeview") or not win.treeview:
         return
     table = win.treeview
-    pending_color = QColor("#89b4fa")
+    pending_color = QColor(get_palette()["accent"])
     if not hasattr(win, "refreshing_profile_ids"):
         win.refreshing_profile_ids = set()
     win.refreshing_profile_ids.add(profile_id)
@@ -69,7 +71,7 @@ def update_refreshing_spinners(win, spinner_char):
     pending_pids = getattr(win, "refreshing_profile_ids", set())
     if not pending_pids:
         return
-    pending_color = QColor("#89b4fa")
+    pending_color = QColor(get_palette()["accent"])
     for row in range(table.rowCount()):
         item = table.item(row, 0)
         if item and item.data(Qt.ItemDataRole.UserRole) in pending_pids:

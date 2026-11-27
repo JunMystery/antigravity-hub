@@ -10,6 +10,7 @@ import concurrent.futures
 from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
 from launcher_i18n import tr
+from launcher_theme import set_semantic_text
 from launcher_storage import MANUAL_COOLDOWN, load_accounts, save_data
 from launcher_quota_fetcher import fetch_single_account_quota
 
@@ -84,7 +85,7 @@ def handle_all_done(win, results, now):
     win.is_refreshing_quota = False
     if hasattr(win, "lbl_info"):
         msg = tr("quota.refresh_all_done", count=len(results), time=time.strftime('%H:%M:%S'))
-        win.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{msg}</span></b>")
+        set_semantic_text(win.lbl_info, msg, "green", bold=True)
 
     start_refresh_cooldown(win, MANUAL_COOLDOWN)
 
@@ -107,7 +108,7 @@ def handle_single_done(win, pid, q5_val, q5_text, q5_valid, q5_reset, qw_val, qw
     save_data(win.data)
     if hasattr(win, "lbl_info"):
         msg = tr("quota.refresh_single_done", email=prof_email, time=time.strftime('%H:%M:%S'))
-        win.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{msg}</span></b>")
+        set_semantic_text(win.lbl_info, msg, "green", bold=True)
 
 def handle_error(win):
     """Xử lý khôi phục giao diện khi quá trình quét ngầm gặp ngoại lệ."""
@@ -120,7 +121,7 @@ def handle_error(win):
         win.btn_refresh_all.setText("⟳")
     if hasattr(win, "lbl_info"):
         msg = tr("quota.refresh_error")
-        win.lbl_info.setText(f"<b><span style='color:#f38ba8;'>{msg}</span></b>")
+        set_semantic_text(win.lbl_info, msg, "red", bold=True)
 
 def get_quota_btn_label(loading: bool = False) -> str:
     """Trả về nhãn cho nút làm mới Quota trong hàng."""
@@ -211,7 +212,7 @@ def refresh_all_quota(win, widget=None):
 
     if hasattr(win, "lbl_info"):
         msg = tr("quota.refreshing", count=len(profiles))
-        win.lbl_info.setText(f"<b><span style='color:#89b4fa;'>{msg}</span></b>")
+        set_semantic_text(win.lbl_info, msg, "accent", bold=True)
 
     def worker():
         try:

@@ -41,7 +41,7 @@ function matchModelRule(modelName, modelRules = [], allAccounts = []) {
       email: rule.account_email
     };
     const targetAcc = findAccountByKey(allAccounts, ref);
-    if (targetAcc) {
+    if (targetAcc && targetAcc.enabled !== false) {
       return { account: targetAcc, rule };
     }
   }

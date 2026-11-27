@@ -19,6 +19,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QTimer, Qt
 
 from launcher_i18n import tr, get_current_language
+from launcher_theme import get_palette, set_semantic_text
 from launcher_storage import (
     CONFIG_DIR, ACCOUNTS_FILE, load_accounts, load_data
 )
@@ -74,7 +75,7 @@ def start_google_oauth_flow(parent_window):
     layout.setSpacing(10)
     layout.setContentsMargins(18, 16, 18, 16)
 
-    lbl_title = QLabel(f"<b><span style='font-size:14px; color:#89b4fa;'>{tr('oauth.opened_browser_title')}</span></b>")
+    lbl_title = QLabel(f"<b><span style='font-size:14px; color:{get_palette()['accent']};'>{tr('oauth.opened_browser_title')}</span></b>")
     layout.addWidget(lbl_title)
 
     lbl_sub = QLabel(tr("oauth.instruction"))
@@ -173,6 +174,6 @@ def start_google_oauth_flow(parent_window):
         parent_window.data = load_data()
         parent_window._refresh_list()
         parent_window.on_refresh_all_quota()
-        parent_window.lbl_info.setText(f"<b><span style='color:#a6e3a1;'>{tr('oauth.success_info')}</span></b>")
+        set_semantic_text(parent_window.lbl_info, tr("oauth.success_info"), "green", bold=True)
         if hasattr(parent_window, "activate_window"):
             parent_window.activate_window()

@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QStyle
 from PyQt6.QtCore import Qt, QModelIndex, QRect, QSize
 from PyQt6.QtGui import QPainter, QColor
 
+from launcher_theme import get_palette
+
 COLOR_IN = QColor("#f97316")      # Vibrant Orange for In (Sent)
 COLOR_SLASH = QColor("#6c7086")   # Overlay Gray for '/'
 COLOR_OUT = QColor("#22c55e")     # Vivid Green for Out (Received)
@@ -95,19 +97,25 @@ class TokenInOutDelegate(QStyledItemDelegate):
 
         rect = option.rect
         fm = option.fontMetrics
+        p = get_palette()
+        c_in = QColor(p["tok_in"])
+        c_slash = QColor(p["tok_slash"])
+        c_out = QColor(p["tok_out"])
+        c_cached = QColor(p["tok_cached"])
+        c_muted = QColor(p["tok_muted"])
 
         if not in_text and not out_text:
             painter.restore()
             return
 
         if "/" not in (raw_text or ""):
-            painter.setPen(COLOR_MUTED)
+            painter.setPen(c_muted)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, (raw_text or "").strip() or "--")
             painter.restore()
             return
 
         if in_text in ("--", "") and out_text in ("--", ""):
-            painter.setPen(COLOR_MUTED)
+            painter.setPen(c_muted)
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, in_text or "--")
             painter.restore()
             return
@@ -125,7 +133,7 @@ class TokenInOutDelegate(QStyledItemDelegate):
 
         # 1. Draw '/' separator at center_x
         slash_rect = QRect(slash_x, rect.y(), slash_w, rect.height())
-        painter.setPen(COLOR_SLASH)
+        painter.setPen(c_slash)
         painter.drawText(slash_rect, Qt.AlignmentFlag.AlignCenter, slash_str)
 
         # 2. Draw 'In' right-aligned before slash
@@ -134,7 +142,7 @@ class TokenInOutDelegate(QStyledItemDelegate):
         if in_avail_w > 0:
             in_draw = fm.elidedText(in_text, Qt.TextElideMode.ElideLeft, in_avail_w) if fm.horizontalAdvance(in_text) > in_avail_w else in_text
             in_rect = QRect(in_left, rect.y(), in_avail_w, rect.height())
-            painter.setPen(COLOR_IN)
+            painter.setPen(c_in)
             painter.drawText(in_rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, in_draw)
 
         # 3. Draw 'Out' left-aligned after slash
@@ -145,7 +153,7 @@ class TokenInOutDelegate(QStyledItemDelegate):
         if out_avail_w > 0:
             out_draw = fm.elidedText(out_text, Qt.TextElideMode.ElideRight, out_avail_w) if out_w > out_avail_w else out_text
             out_rect = QRect(out_x, rect.y(), min(out_w, out_avail_w), rect.height())
-            painter.setPen(COLOR_OUT)
+            painter.setPen(c_out)
             painter.drawText(out_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, out_draw)
 
             # 4. Draw 'Cached' (if any) after out
@@ -156,7 +164,7 @@ class TokenInOutDelegate(QStyledItemDelegate):
                     cached_w = fm.horizontalAdvance(cached_text)
                     cached_draw = fm.elidedText(cached_text, Qt.TextElideMode.ElideRight, cached_avail_w) if cached_w > cached_avail_w else cached_text
                     cached_rect = QRect(cached_x, rect.y(), min(cached_w, cached_avail_w), rect.height())
-                    painter.setPen(COLOR_CACHED)
+                    painter.setPen(c_cached)
                     painter.drawText(cached_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, cached_draw)
 
         painter.restore()

@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from launcher_i18n import tr
+from launcher_theme import set_semantic_text, refresh_semantic_label
 from launcher_storage import (
     CONFIG_DIR, ACCOUNTS_FILE, PROFILES_FILE, PROFILES_BASE_DIR,
     find_app_binary, find_ide_binary, load_data, save_data, _secure_write
@@ -237,10 +238,10 @@ class BackupSettingsGroup(QGroupBox):
             return
         ok, msg = create_backup(fn)
         if ok:
-            self.lbl_status.setText(f"<span style='color:#a6e3a1;'>{tr('backup.success', path=os.path.basename(msg))}</span>")
+            set_semantic_text(self.lbl_status, tr("backup.success", path=os.path.basename(msg)), "green")
             QMessageBox.information(self, tr("settings.backup_group"), tr("backup.success", path=msg))
         else:
-            self.lbl_status.setText(f"<span style='color:#f38ba8;'>{tr('backup.failed', error=msg)}</span>")
+            set_semantic_text(self.lbl_status, tr("backup.failed", error=msg), "red")
 
     def _on_restore(self):
         fn, _ = QFileDialog.getOpenFileName(self, tr("restore.select_zip_title"), "", "Zip Files (*.zip)")
@@ -259,7 +260,7 @@ class BackupSettingsGroup(QGroupBox):
         mode = "replace" if btn == btn_rep else "merge"
         ok, msg = restore_backup(fn, mode=mode)
         if ok:
-            self.lbl_status.setText(f"<span style='color:#a6e3a1;'>{msg}</span>")
+            set_semantic_text(self.lbl_status, msg, "green")
             self.win.data = load_data()
             try:
                 from launcher_monitor import send_proxy_cmd
@@ -272,8 +273,11 @@ class BackupSettingsGroup(QGroupBox):
                 self.win.on_refresh_all_quota()
             QMessageBox.information(self, tr("settings.backup_group"), msg)
         else:
-            self.lbl_status.setText(f"<span style='color:#f38ba8;'>{msg}</span>")
+            set_semantic_text(self.lbl_status, msg, "red")
             QMessageBox.warning(self, tr("settings.backup_group"), msg)
+
+    def refresh_theme(self):
+        refresh_semantic_label(self.lbl_status)
 
     def retranslate_ui(self):
         self.setTitle(tr("settings.backup_group"))

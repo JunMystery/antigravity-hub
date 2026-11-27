@@ -96,9 +96,7 @@ class AccountRotator {
     const sessionId = sessionAffinity.extractSessionId(headers, bodyBuffer);
     const isSub = sessionAffinity.isSubagent(reqUrl, host, headers, bodyBuffer, sessionId);
     const modelName = extractModelName(reqUrl, bodyBuffer);
-    const pool = this.allAccounts.length > 0 ? this.allAccounts : this.accounts;
-
-    const ruleMatch = allocateForModelRule(modelName, this.modelRules, pool, this.ruleCursors, this.requestsPerAccount);
+    const ruleMatch = allocateForModelRule(modelName, this.modelRules, this.accounts, this.ruleCursors, this.requestsPerAccount);
     if (ruleMatch) {
       this.requestCount++;
       this.saveRotatorStateDebounced();

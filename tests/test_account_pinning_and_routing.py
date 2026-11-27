@@ -84,6 +84,11 @@ class TestPinningAndModelRouting(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             rules = [{"pattern": "claude-opus", "account_email": "u3@test.com", "account_id": "a3", "enabled": True}]
             acc_file, prof_file, state_file = self._setup_files(tmp_dir, rules=rules)
+            with open(prof_file, "r", encoding="utf-8") as f:
+                prof_data = json.load(f)
+            prof_data["profiles"][2]["enabled"] = True
+            with open(prof_file, "w", encoding="utf-8") as f:
+                json.dump(prof_data, f)
             code = f"""
             const {{ AccountRotator }} = require("./proxy/account_rotator");
             const cfg = {{ ACCOUNTS_FILE: {json.dumps(acc_file)}, PROFILES_FILE: {json.dumps(prof_file)}, ROTATOR_STATE_FILE: {json.dumps(state_file)} }};
@@ -117,6 +122,28 @@ class TestPinningAndModelRouting(unittest.TestCase):
             self.assertEqual(out["opusReason"], "model_rule")
             self.assertEqual(out["flashEmail"], "u2@test.com")
             self.assertEqual(out["flashReason"], "pinned")
+
+            # Deactive u3 o Accounts => Model Rule khong duoc chon hoac retry u3 nua
+            prof_data["profiles"][2]["enabled"] = False
+            with open(prof_file, "w", encoding="utf-8") as f:
+                json.dump(prof_data, f)
+            code_deactive = f"""
+            const {{ AccountRotator }} = require("./proxy/account_rotator");
+            const cfg = {{ ACCOUNTS_FILE: {json.dumps(acc_file)}, PROFILES_FILE: {json.dumps(prof_file)}, ROTATOR_STATE_FILE: {json.dumps(state_file)} }};
+            const r3 = new AccountRotator(cfg);
+            r3.loadState();
+            const opusAfterOff = r3.allocateAccountForRequest(
+              "/v1internal:streamGenerateContent", "daily-cloudcode-pa.googleapis.com", {{}},
+              Buffer.from(JSON.stringify({{ model: "claude-opus-4-6" }}))
+            );
+            console.log(JSON.stringify({{
+              opusAfterOffEmail: opusAfterOff.account.email,
+              opusAfterOffReason: opusAfterOff.lockReason
+            }}));
+            """
+            out_off = run_node(code_deactive)
+            self.assertEqual(out_off["opusAfterOffEmail"], "u2@test.com")
+            self.assertEqual(out_off["opusAfterOffReason"], "pinned")
 
 
 class TestLauncherUiAndDiscovery(unittest.TestCase):
@@ -257,6 +284,25 @@ class TestLauncherUiAndDiscovery(unittest.TestCase):
             self.assertEqual(dash.card_turn.lbl_value.text(), "∞")
             self.assertFalse(dash.btn_next.isEnabled())
             self.assertFalse(hasattr(dash, "btn_model_rules"))
+
+    def test_on_account_toggled_reloads_running_proxy(self):
+        import launcher_window
+
+        class _DummyWin:
+            data = {"profiles": [{"id": "a1", "email": "u1@test.com", "enabled": True}]}
+            refreshed = []
+            def _refresh_list(self, select_id=None):
+                self.refreshed.append(select_id)
+
+        win = _DummyWin()
+        with patch("launcher_window.save_data") as mock_save, \
+             patch("launcher_window.is_proxy_running", return_value=True), \
+             patch("launcher_window.send_proxy_cmd") as mock_cmd:
+            launcher_window.LauncherWindow.on_account_toggled(win, "a1", False)
+            self.assertFalse(win.data["profiles"][0]["enabled"])
+            self.assertEqual(win.refreshed, ["a1"])
+            mock_save.assert_called_once_with(win.data)
+            mock_cmd.assert_called_once_with(win, "reload")
 
 
 if __name__ == "__main__":

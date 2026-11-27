@@ -250,7 +250,7 @@ def _resolve_rule_accounts_py(rule: dict, available_accounts: List[dict]) -> Lis
         if not isinstance(ref, dict):
             continue
         acc = by_email.get(str(ref.get("email") or "").lower()) or by_id.get(str(ref.get("id") or "").lower())
-        if acc:
+        if acc and acc.get("enabled", True) is not False:
             key = (str(acc.get("id") or ""), str(acc.get("email") or "").lower())
             if key not in seen:
                 seen.add(key)

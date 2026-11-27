@@ -33,10 +33,10 @@ class TestModelRuleRoundRobin(unittest.TestCase):
         r.allAccounts = [
           { id: "a1", email: "a1@test.com", enabled: true, accessToken: "t1" },
           { id: "a2", email: "a2@test.com", enabled: true, accessToken: "t2" },
-          { id: "b1", email: "b1@test.com", enabled: false, accessToken: "t3" },
+          { id: "b1", email: "b1@test.com", enabled: true, accessToken: "t3" },
           { id: "b2", email: "b2@test.com", enabled: true, accessToken: "t4" }
         ];
-        r.accounts = [r.allAccounts[0], r.allAccounts[1], r.allAccounts[3]];
+        r.accounts = [r.allAccounts[0], r.allAccounts[1], r.allAccounts[2], r.allAccounts[3]];
         r.modelRules = sanitizeModelRules([
           { id: "r_inherit", patterns: ["claude"], strategy: "round_robin", requests_per_account: 0, accounts: [{ email: "a1@test.com" }, { email: "a2@test.com" }] },
           { id: "r_custom", patterns: ["gemini"], strategy: "round_robin", requests_per_account: 2, accounts: [{ email: "b1@test.com" }, { email: "b2@test.com" }] }
@@ -51,6 +51,9 @@ class TestModelRuleRoundRobin(unittest.TestCase):
         const midA = r.allocateAccountForRequest("/v1:chat", "", {}, bodyA);
         r.requestsPerAccount = 1;
         const loweredA = r.allocateAccountForRequest("/v1:chat", "", {}, bodyA);
+        r.allAccounts[2].enabled = false;
+        r.accounts = [r.allAccounts[0], r.allAccounts[1], r.allAccounts[3]];
+        const bDeactive = [1, 2].map(() => r.allocateAccountForRequest("/v1:chat", "", {}, bodyB).account.email);
         console.log(JSON.stringify({
           aEmails: picksA.map((p) => p.account.email),
           aServed: picksA.map((p) => p.servedCount),
@@ -61,7 +64,8 @@ class TestModelRuleRoundRobin(unittest.TestCase):
           gServed: [g1.servedCount, g2.servedCount],
           gIdx: r.accountIndex,
           midA: [midA.account.email, midA.servedCount],
-          loweredA: [loweredA.account.email, loweredA.servedCount, loweredA.requestsPerAccount]
+          loweredA: [loweredA.account.email, loweredA.servedCount, loweredA.requestsPerAccount],
+          bDeactive
         }));
         """
         out = run_node(code)
@@ -75,6 +79,7 @@ class TestModelRuleRoundRobin(unittest.TestCase):
         self.assertEqual(out["gIdx"], 0)
         self.assertEqual(out["midA"], ["a1@test.com", 1])
         self.assertEqual(out["loweredA"], ["a2@test.com", 1, 1])
+        self.assertEqual(out["bDeactive"], ["b2@test.com", "b2@test.com"])
 
     def test_model_rule_precedence_over_pause_pin_and_fallback_to_pinned(self):
         code = r"""
@@ -86,9 +91,9 @@ class TestModelRuleRoundRobin(unittest.TestCase):
         r.allAccounts = [
           { id: "p1", email: "pin@test.com", enabled: true, accessToken: "t0" },
           { id: "g1", email: "g1@test.com", enabled: true, accessToken: "t1" },
-          { id: "g2", email: "g2@test.com", enabled: false, accessToken: "t2" }
+          { id: "g2", email: "g2@test.com", enabled: true, accessToken: "t2" }
         ];
-        r.accounts = [r.allAccounts[0], r.allAccounts[1]];
+        r.accounts = [r.allAccounts[0], r.allAccounts[1], r.allAccounts[2]];
         r.rotationPaused = true;
         r.pinnedAccountKey = { id: "p1", email: "pin@test.com" };
         r.modelRules = sanitizeModelRules([

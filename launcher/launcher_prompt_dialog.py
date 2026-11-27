@@ -47,7 +47,7 @@ def ask_hide_on_launch_prompt(parent=None):
 
     btn_keep = QPushButton(tr("dialog.btn_keep_window"))
     btn_hide = QPushButton(tr("dialog.btn_hide_tray"))
-    btn_hide.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold; padding: 6px 14px;")
+    btn_hide.setObjectName("btn_primary")
 
     btn_row.addWidget(btn_keep)
     btn_row.addWidget(btn_hide)
@@ -100,9 +100,9 @@ def ask_close_action_prompt(parent=None):
 
     btn_cancel = QPushButton(tr("btn.cancel"))
     btn_exit = QPushButton(tr("dialog.btn_exit_app"))
-    btn_exit.setStyleSheet("background-color: #f38ba8; color: #11111b; font-weight: bold; padding: 6px 14px;")
+    btn_exit.setObjectName("btn_danger")
     btn_hide = QPushButton(tr("dialog.btn_hide_tray"))
-    btn_hide.setStyleSheet("background-color: #89b4fa; color: #11111b; font-weight: bold; padding: 6px 14px;")
+    btn_hide.setObjectName("btn_primary")
 
     btn_row.addWidget(btn_cancel)
     btn_row.addStretch(1)
@@ -138,7 +138,7 @@ def show_about_prompt(parent=None):
     try:
         from launcher import __version__
     except ImportError:
-        __version__ = "0.2.2"
+        __version__ = "0.2.3"
     q_parent = parent if isinstance(parent, QWidget) else None
     dlg = QMessageBox(q_parent)
     dlg.setWindowTitle(tr("dialog.about_title"))

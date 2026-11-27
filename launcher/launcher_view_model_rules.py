@@ -16,6 +16,7 @@ from launcher_i18n import tr
 from launcher_storage import save_data
 from launcher_monitor import send_proxy_cmd
 from launcher_toggle_switch import ToggleSwitch
+from launcher_order_widget import OrderCellWidget
 from launcher_model_discovery import (
     collect_available_accounts, discover_models_from_logs,
     fetch_all_accounts_models, simulate_model_route
@@ -26,7 +27,7 @@ from launcher_model_rule_formatter import (
     format_rule_strategy_cell, format_rule_accounts_cell
 )
 from launcher_item_list_dialog import (
-    make_action_button, make_detail_button, wrap_cell_widgets,
+    make_action_button, make_detail_button, wrap_cell_widgets, bind_row_context_menu,
     open_available_models_dialog, open_rule_patterns_dialog, open_rule_accounts_dialog
 )
 
@@ -96,7 +97,7 @@ class ModelRulesView(QWidget):
             QHeaderView.ResizeMode.Fixed, QHeaderView.ResizeMode.Fixed,
             QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.ResizeToContents,
             QHeaderView.ResizeMode.Stretch,
-        ), {0: 58, 1: 46})
+        ), {0: 72, 1: 56})
         self.tbl_rules.viewport().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tbl_rules.viewport().customContextMenuRequested.connect(self._show_rule_context_menu)
         layout.addWidget(self.tbl_rules, 2)
@@ -148,26 +149,38 @@ class ModelRulesView(QWidget):
             row = self.tbl_rules.rowCount()
             self.tbl_rules.insertRow(row)
 
-            btn_up = make_action_button("▲", lambda _, i=idx: self.move_rule(i, -1), (24, 22))
-            btn_up.setEnabled(idx > 0)
-            btn_dn = make_action_button("▼", lambda _, i=idx: self.move_rule(i, 1), (24, 22))
-            btn_dn.setEnabled(idx < len(rules) - 1)
-            self.tbl_rules.setCellWidget(row, 0, wrap_cell_widgets([btn_up, btn_dn]))
+            ord_widget = OrderCellWidget(
+                pid=str(idx),
+                order_num=idx + 1,
+                is_first=(idx == 0),
+                is_last=(idx == len(rules) - 1),
+                on_step_callback=lambda p, d: self.move_rule(int(p), d),
+                on_edit_callback=lambda p, v: self.reorder_rule_to(int(p), v),
+                parent=self.tbl_rules
+            )
+            self.tbl_rules.setCellWidget(row, 0, ord_widget)
 
             sw = ToggleSwitch(checked=rule.get("enabled", True) is not False)
             sw.toggled.connect(lambda state, i=idx: self.toggle_rule(i, state))
-            self.tbl_rules.setCellWidget(row, 1, wrap_cell_widgets([sw], center=True))
+            sw_wrap = wrap_cell_widgets([sw], center=True, margins=(4, 0, 4, 0))
+            self.tbl_rules.setCellWidget(row, 1, sw_wrap)
 
             pat_text, pat_tip = format_rule_pattern_cell(rule)
             btn_pat = make_detail_button(pat_text, pat_tip, lambda _, r=rule: open_rule_patterns_dialog(self, r))
-            self.tbl_rules.setCellWidget(row, 2, wrap_cell_widgets([btn_pat]))
+            pat_wrap = wrap_cell_widgets([btn_pat])
+            self.tbl_rules.setCellWidget(row, 2, pat_wrap)
             self.tbl_rules.setItem(row, 3, QTableWidgetItem(format_rule_strategy_cell(rule, compact=True)))
             acc_text, acc_tip = format_rule_accounts_cell(rule)
             btn_acc = make_detail_button(
                 acc_text, acc_tip,
-                lambda _, r=rule: open_rule_accounts_dialog(self, r, collect_available_accounts(self.win.data))
+                lambda _, r=rule: open_rule_accounts_dialog(
+                    self, r, collect_available_accounts(self.win.data), on_reordered=self._persist_and_reload
+                )
             )
-            self.tbl_rules.setCellWidget(row, 4, wrap_cell_widgets([btn_acc]))
+            acc_wrap = wrap_cell_widgets([btn_acc])
+            self.tbl_rules.setCellWidget(row, 4, acc_wrap)
+            for cell_w in (ord_widget, sw_wrap, pat_wrap, acc_wrap):
+                bind_row_context_menu(cell_w, lambda gpos, r=row: self._open_rule_menu_at(r, gpos))
 
         cur_txt = self.combo_test_model.currentText()
         self.combo_test_model.blockSignals(True)
@@ -190,6 +203,13 @@ class ModelRulesView(QWidget):
             rules[idx], rules[target] = rules[target], rules[idx]
             self._persist_and_reload()
 
+    def reorder_rule_to(self, idx: int, new_order: int):
+        rules = self._get_rules()
+        if 0 <= idx < len(rules):
+            target = rules.pop(idx)
+            rules.insert(max(0, min(int(new_order) - 1, len(rules))), target)
+            self._persist_and_reload()
+
     def toggle_rule(self, idx: int, checked: bool):
         rules = self._get_rules()
         if 0 <= idx < len(rules):
@@ -204,10 +224,12 @@ class ModelRulesView(QWidget):
         act_del.triggered.connect(lambda: self.delete_rule(idx))
         return menu
 
-    def _show_rule_context_menu(self, pos):
-        row = self.tbl_rules.rowAt(pos.y())
+    def _open_rule_menu_at(self, row: int, global_pos):
         if 0 <= row < len(self._get_rules()):
-            self._build_rule_context_menu(row).exec(self.tbl_rules.viewport().mapToGlobal(pos))
+            self._build_rule_context_menu(row).exec(global_pos)
+
+    def _show_rule_context_menu(self, pos):
+        self._open_rule_menu_at(self.tbl_rules.rowAt(pos.y()), self.tbl_rules.viewport().mapToGlobal(pos))
 
     def delete_rule(self, idx: int):
         rules = self._get_rules()

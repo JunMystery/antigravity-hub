@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QColor
 
 from launcher_i18n import tr
+from launcher_theme import repolish_widget
 from launcher_quota_runner import refresh_single_row_quota
 from launcher_order_widget import OrderCellWidget
 from launcher_quota_widget import QuotaCellWidget
@@ -79,8 +80,10 @@ def update_treeview_headers(win):
         auto_on = win.auto_refresh_enabled
         win.btn_auto.setText(f"Auto: {'ON' if auto_on else 'OFF'}")
         win.btn_auto.setToolTip(tr("tooltip.auto_on") if auto_on else tr("tooltip.auto_off"))
-        bg = "#27ae60" if auto_on else "#c0392b"
-        win.btn_auto.setStyleSheet(f"background-color: {bg}; color: #ffffff; font-weight: bold;")
+        win.btn_auto.setObjectName("btn_auto")
+        win.btn_auto.setProperty("auto_state", "on" if auto_on else "off")
+        win.btn_auto.setStyleSheet("")
+        repolish_widget(win.btn_auto)
 
 def populate_treeview(win, select_id=None):
     """Nạp danh sách profiles vào QTableWidget."""

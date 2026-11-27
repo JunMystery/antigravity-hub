@@ -12,6 +12,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from launcher_i18n import tr
+from launcher_theme import set_semantic_text
 from launcher_storage import (
     find_app_binary, find_ide_binary, save_data, get_app_binary, get_ide_binary
 )
@@ -97,7 +98,7 @@ class LauncherSettingsDialog(QDialog):
         btn_box.addWidget(btn_cancel)
 
         btn_save = QPushButton(tr("btn.save"))
-        btn_save.setStyleSheet("background-color: #2980b9; color: #ffffff; font-weight: bold;")
+        btn_save.setObjectName("btn_primary")
         btn_save.clicked.connect(self._save_settings)
         btn_box.addWidget(btn_save)
 
@@ -130,9 +131,9 @@ class LauncherSettingsDialog(QDialog):
     def _create_shortcut(self):
         ok = create_desktop_shortcut()
         if ok:
-            self.lbl_sc_status.setText(f"<span style='color:#a6e3a1;'>{tr('settings.shortcut_success')}</span>")
+            set_semantic_text(self.lbl_sc_status, tr("settings.shortcut_success"), "green")
         else:
-            self.lbl_sc_status.setText(f"<span style='color:#f38ba8;'>{tr('settings.shortcut_failed')}</span>")
+            set_semantic_text(self.lbl_sc_status, tr("settings.shortcut_failed"), "red")
 
     def _save_settings(self):
         self.win.data.setdefault("settings", {})
